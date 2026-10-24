@@ -25,7 +25,13 @@ import {
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { CountUp, FitScale } from "@/components/motion";
 import { FileBadge, KIND_LABEL, extKind, formatSize, type FileKind } from "@/components/file-badge";
-import { api, type Health, type IndexStatus, type ServerDocument } from "@/lib/api";
+import {
+  api,
+  type Health,
+  type IndexStatus,
+  type ReadReport,
+  type ServerDocument,
+} from "@/lib/api";
 
 export const Route = createFileRoute("/get-started")({
   head: () => ({
@@ -47,26 +53,48 @@ export const Route = createFileRoute("/get-started")({
   component: GetStartedPage,
 });
 
-type FileStatus = "processing" | "extracted" | "queued";
+type FileStatus = "reading" | "failed" | "processing" | "extracted" | "queued";
 
 type CaseFile = {
+  /** Corpus id, used to delete. */
+  id: string;
   name: string;
   kind: FileKind;
   size: string;
   meta: string;
   status: FileStatus;
+  /** Pages read so far, 0..1, while a PDF is being read. */
+  progress: number | null;
+  pages: number;
+  done: number;
+  error: string | null;
 };
 
 type Message = { tone: "error" | "warning" | "info"; text: string };
 
+/** One line summarising how a PDF was read. */
+function describeRead(r: ReadReport) {
+  const parts = [`${r.pages} page${r.pages === 1 ? "" : "s"}`];
+  if (r.text_pages) parts.push(`${r.text_pages} from text`);
+  if (r.ocr_pages) parts.push(`${r.ocr_pages} read from images`);
+  if (r.figure_pages) parts.push(`${r.figure_pages} with figures described`);
+  if (r.failed_pages.length) parts.push(`${r.failed_pages.length} could not be read`);
+  return parts.join(" • ");
+}
+
 function toCaseFile(doc: ServerDocument, job: IndexStatus | null): CaseFile {
-  const kind = extKind(doc.name);
-  const status: FileStatus =
-    job?.state === "running"
-      ? "processing"
-      : job?.built_files.includes(doc.name)
-        ? "extracted"
-        : "queued";
+  const display = doc.original ?? doc.name;
+  const kind = extKind(display);
+  const reading = doc.status === "reading" || doc.status === "queued";
+  const status: FileStatus = reading
+    ? "reading"
+    : doc.status === "failed"
+      ? "failed"
+      : job?.state === "running"
+        ? "processing"
+        : job?.built_files.includes(doc.name)
+          ? "extracted"
+          : "queued";
   const added = doc.modified
     ? new Date(doc.modified * 1000).toLocaleDateString(undefined, {
         day: "numeric",
@@ -74,12 +102,26 @@ function toCaseFile(doc: ServerDocument, job: IndexStatus | null): CaseFile {
         year: "numeric",
       })
     : "just added";
+  const meta = reading
+    ? doc.pages
+      ? `Reading page ${Math.min(doc.done + 1, doc.pages)} of ${doc.pages}…`
+      : "Opening document…"
+    : doc.status === "failed"
+      ? (doc.error ?? "Could not be read")
+      : doc.report
+        ? `${KIND_LABEL[kind]} • ${describeRead(doc.report)}`
+        : `${KIND_LABEL[kind]} • ${added}`;
   return {
-    name: doc.name,
+    id: doc.name,
+    name: display,
     kind,
     size: formatSize(doc.size),
-    meta: `${KIND_LABEL[kind]} • ${added}`,
+    meta,
     status,
+    progress: reading ? (doc.pages ? doc.done / doc.pages : 0) : null,
+    pages: doc.pages,
+    done: doc.done,
+    error: doc.error,
   };
 }
 
@@ -91,11 +133,31 @@ function GetStartedPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  // Last seen status per document, to announce each reading report once when it finishes.
+  const seen = useRef<Map<string, ServerDocument["status"]>>(new Map());
 
   const refresh = useCallback(async () => {
     try {
       const [d, j, h] = await Promise.all([api.documents(), api.indexStatus(), api.health()]);
+      const finished: Message[] = [];
+      for (const doc of d) {
+        const before = seen.current.get(doc.name);
+        if (before === "reading" || before === "queued") {
+          const name = doc.original ?? doc.name;
+          if (doc.status === "ready" && doc.report) {
+            finished.push({ tone: "info", text: `${name} is ready: ${describeRead(doc.report)}.` });
+          } else if (doc.status === "failed") {
+            finished.push({
+              tone: "error",
+              text: `${name} could not be read: ${doc.error ?? "unknown error"}`,
+            });
+          }
+        }
+        seen.current.set(doc.name, doc.status);
+      }
+      if (finished.length) setMessages((prev) => [...finished, ...prev].slice(0, 6));
       setDocs(d);
       setJob(j);
       setHealth(h);
@@ -109,6 +171,14 @@ function GetStartedPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // While documents are being read, poll for live page progress.
+  const reading = docs.some((d) => d.status === "reading" || d.status === "queued");
+  useEffect(() => {
+    if (!reading) return;
+    const id = setInterval(() => void refresh(), 1000);
+    return () => clearInterval(id);
+  }, [reading, refresh]);
 
   // Poll while a build runs so file rows move from Processing to Extracted.
   const running = job?.state === "running";
@@ -130,16 +200,22 @@ function GetStartedPage() {
     if (!list || list.length === 0) return;
     setBusy(true);
     setUploading(true);
+    setUploadPct(0);
     try {
-      const res = await api.upload(Array.from(list));
+      const res = await api.upload(Array.from(list), setUploadPct);
       const notes: Message[] = [
         ...res.errors.map((text) => ({ tone: "error" as const, text })),
         ...res.warnings.map((text) => ({ tone: "warning" as const, text })),
       ];
-      if (res.accepted.length && res.estimate.chunks != null) {
+      const pdfs = res.accepted.filter((n) => n.toLowerCase().endsWith(".pdf")).length;
+      if (res.accepted.length) {
         notes.push({
           tone: "info",
-          text: `Added ${res.accepted.length} file${res.accepted.length === 1 ? "" : "s"}. Extraction will take about ${res.estimate.chunks} chunks and ${res.estimate.llm_calls} LLM calls.`,
+          text: `Added ${res.accepted.length} file${res.accepted.length === 1 ? "" : "s"}.${
+            pdfs
+              ? " PDFs are being read page by page; scanned pages and figures are read from their images."
+              : ""
+          }`,
         });
       }
       setMessages(notes);
@@ -168,7 +244,8 @@ function GetStartedPage() {
   const files = docs.map((d) => toCaseFile(d, job));
   // The index matches the uploaded files exactly (nothing added, replaced or deleted since the last build).
   const upToDate = files.length > 0 && Boolean(job?.fresh);
-  const canExtract = files.length > 0;
+  const readyFiles = files.filter((f) => f.status !== "reading" && f.status !== "failed").length;
+  const canExtract = readyFiles > 0 && !reading;
 
   // Rebuild from the current files unless a build is running or the index already matches them,
   // then open the Extract step.
@@ -187,7 +264,12 @@ function GetStartedPage() {
     <WorkspaceShell active={0}>
       <main className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:h-full lg:grid-cols-[1.15fr_1fr] lg:grid-rows-[minmax(0,1fr)] lg:py-5 [&>*]:min-w-0">
         <div className="space-y-5 lg:flex lg:min-h-0 lg:flex-col lg:gap-4 lg:space-y-0">
-          <UploadCard onFiles={addFiles} disabled={busy || running} uploading={uploading} />
+          <UploadCard
+            onFiles={addFiles}
+            disabled={busy || running}
+            uploading={uploading}
+            uploadPct={uploadPct}
+          />
           {messages.length > 0 ? <Messages items={messages} /> : null}
         </div>
         <div className="flex flex-col gap-5 lg:min-h-0 lg:gap-4">
@@ -209,11 +291,13 @@ function GetStartedPage() {
             ) : (
               <Sparkles className="h-6 w-6 transition-transform duration-500 group-hover:rotate-90 group-hover:scale-110" />
             )}
-            {running
-              ? "View Extraction Progress"
-              : upToDate
-                ? "Explore Extracted Information"
-                : "Extract Information"}
+            {reading
+              ? "Reading Documents…"
+              : running
+                ? "View Extraction Progress"
+                : upToDate
+                  ? "Explore Extracted Information"
+                  : "Extract Information"}
             <ArrowRight className="h-6 w-6 transition-transform duration-300 group-hover:translate-x-1.5" />
           </button>
           {health && !health.api_key ? (
@@ -265,10 +349,12 @@ function UploadCard({
   onFiles,
   disabled,
   uploading,
+  uploadPct,
 }: {
   onFiles: (files: FileList | null) => void;
   disabled: boolean;
   uploading: boolean;
+  uploadPct: number;
 }) {
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -319,10 +405,14 @@ function UploadCard({
               strokeWidth={2.4}
             />
           )}
-          {uploading ? "Uploading…" : "Browse Files"}
+          {uploading
+            ? uploadPct < 1
+              ? `Uploading ${Math.round(uploadPct * 100)}%`
+              : "Saving…"
+            : "Browse Files"}
         </button>
         <p className="mt-6 text-sm text-muted-foreground">
-          Supports PDF and TXT (max 10 MB each, up to 100 files)
+          Supports PDF and TXT (max 100 MB each, up to 100 files)
         </p>
         <input
           ref={inputRef}
@@ -537,11 +627,11 @@ function FilesCard({
         >
           {files.map((file, i) => (
             <FileRow
-              key={file.name}
+              key={file.id}
               index={i}
               file={file}
               disabled={disabled}
-              onDelete={() => onDelete(file.name)}
+              onDelete={() => onDelete(file.id)}
             />
           ))}
         </ul>
@@ -571,12 +661,38 @@ function FileRow({
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-ink-deep">{file.name}</p>
-        <p className="mt-1 truncate text-xs text-muted-foreground">{file.meta}</p>
+        <p
+          className={`mt-1 truncate text-xs ${file.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+          title={file.meta}
+        >
+          {file.meta}
+        </p>
+        {file.progress != null ? (
+          <div
+            className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary"
+            role="progressbar"
+            aria-valuenow={Math.round(file.progress * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-leaf-mid to-primary transition-all duration-500"
+              style={{ width: `${Math.max(4, file.progress * 100)}%` }}
+            >
+              <span className="absolute inset-0 animate-shimmer opacity-40" />
+            </div>
+          </div>
+        ) : null}
       </div>
       <span className="hidden w-16 text-right text-sm text-foreground/80 sm:block">
         {file.size}
       </span>
-      <StatusPill status={file.status} />
+      <StatusPill
+        status={file.status}
+        label={
+          file.status === "reading" && file.pages ? `${file.done}/${file.pages} pages` : undefined
+        }
+      />
       <DropdownMenu>
         <DropdownMenuTrigger
           className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -598,8 +714,18 @@ function FileRow({
   );
 }
 
-function StatusPill({ status }: { status: FileStatus }) {
+function StatusPill({ status, label }: { status: FileStatus; label?: string | undefined }) {
   const pill = {
+    reading: {
+      label: label ?? "Reading…",
+      className: "bg-status-blue/10 text-status-blue",
+      icon: <LoaderCircle className="h-4 w-4 animate-spin" />,
+    },
+    failed: {
+      label: "Failed",
+      className: "bg-destructive/10 text-destructive",
+      icon: <AlertCircle className="h-4 w-4" />,
+    },
     processing: {
       label: "Processing...",
       className: "bg-status-blue/10 text-status-blue",
@@ -622,7 +748,7 @@ function StatusPill({ status }: { status: FileStatus }) {
       className={`hidden w-32 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold md:flex ${pill.className}`}
     >
       {pill.icon}
-      {pill.label}
+      <span className="tabular-nums">{pill.label}</span>
     </span>
   );
 }
