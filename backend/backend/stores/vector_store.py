@@ -53,6 +53,49 @@ def _clean(meta: dict) -> dict:
     return out
 
 
+_EMBEDDER: Any = None
+_EMBED_CACHE_MAX = 100_000
+
+
+def _embedder() -> Any:
+    """One default (all-MiniLM-L6-v2, ONNX) embedding function per process, memoised by text.
+
+    A new instance reloads the model (~1.5 s), and CPU embedding is the slowest part of loading the stores, so the
+    fast index builder pre-computes embeddings (prewarm) while it waits on Gemini and the load reuses them. It keeps
+    Chroma's "default" identity, so existing collections stay compatible.
+    """
+    global _EMBEDDER
+    if _EMBEDDER is None:
+        import threading
+
+        from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
+        class CachedDefault(DefaultEmbeddingFunction):
+            _cache: dict = {}
+            _lock = threading.Lock()
+
+            def __call__(self, input):  # noqa: A002 (Chroma's parameter name)
+                with self._lock:
+                    missing = list(dict.fromkeys(t for t in input if t not in self._cache))
+                if missing:
+                    vectors = super().__call__(missing)
+                    with self._lock:
+                        if len(self._cache) > _EMBED_CACHE_MAX:
+                            self._cache.clear()
+                        self._cache.update(zip(missing, vectors))
+                with self._lock:
+                    return [self._cache[t] for t in input]
+
+        _EMBEDDER = CachedDefault()
+    return _EMBEDDER
+
+
+def prewarm(texts: list[str]) -> None:
+    """Embed texts now so a later upsert of the same texts is instant."""
+    if texts:
+        _embedder()(list(texts))
+
+
 class ChromaStore:
     """Persistent ChromaDB client."""
 
@@ -66,16 +109,19 @@ class ChromaStore:
         self.client = chromadb.PersistentClient(path=str(path))
 
     def _collection(self, name: str) -> Any:
-        """Get or create a cosine-space collection with the default embedding function."""
+        """Get or create a cosine-space collection with the shared default embedding function."""
         if name not in COLLECTIONS:
             raise ValueError(f"Unknown collection {name!r}; expected one of {COLLECTIONS}")
-        return self.client.get_or_create_collection(name, metadata={"hnsw:space": "cosine"})
+        return self.client.get_or_create_collection(name, metadata={"hnsw:space": "cosine"},
+                                                    embedding_function=_embedder())
 
     def upsert(self, collection: str, ids: list[str], texts: list[str], metadatas: list[dict]) -> None:
         """Insert or replace documents in batches."""
         col = self._collection(collection)
         for i in range(0, len(ids), BATCH):
+            # Embeddings are passed in: Chroma's own embedding path costs seconds per call even when cached.
             col.upsert(ids=ids[i:i + BATCH], documents=texts[i:i + BATCH],
+                       embeddings=_embedder()(texts[i:i + BATCH]),
                        metadatas=[_clean(m) for m in metadatas[i:i + BATCH]])
 
     def search(self, collection: str, text: str, k: int = 5) -> list[Hit]:
@@ -84,7 +130,7 @@ class ChromaStore:
         n = col.count()
         if not n or not text.strip():
             return []
-        res = col.query(query_texts=[text], n_results=min(k, n))
+        res = col.query(query_embeddings=_embedder()([text]), n_results=min(k, n))
         return [Hit(id=i, text=d or "", score=round(1.0 - float(dist), 4), metadata=m or {})
                 for i, d, dist, m in zip(res["ids"][0], res["documents"][0], res["distances"][0],
                                          res["metadatas"][0])]

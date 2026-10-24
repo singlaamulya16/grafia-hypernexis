@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -180,7 +181,7 @@ _MOCK: dict | None = None
 
 def running() -> bool:
     """A real or simulated run is in progress."""
-    return (_PROC is not None and _PROC.poll() is None) or lock_active() or (
+    return (_PROC is not None and _PROC.poll() is None) or (_THREAD is not None and _THREAD.is_alive())         or lock_active() or (
         _MOCK is not None and time.time() - _MOCK["started"] < MOCK_STAGE_S * len(STAGES))
 
 
@@ -202,6 +203,52 @@ def start(env: dict[str, str] | None = None) -> int:
     return _PROC.pid
 
 
+_THREAD: threading.Thread | None = None
+_FAST_CANCEL = threading.Event()
+
+
+def _fast_log(message: str) -> None:
+    """Append one line to the index log in the same shape GraphRAG's logging uses."""
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a", encoding="utf-8") as fh:
+        fh.write(f"{stamp} INFO fast_index: {message}\n")
+
+
+def start_fast() -> None:
+    """Fast build (backend.fast_index) in a thread of this process: no interpreter start-up, a few large LLM
+    calls, then the stores are loaded. Logs to the same file with the same markers as start()."""
+    global _THREAD
+    if running():
+        raise IndexLocked("Another index run is already in progress.")
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_FILE.write_text(f"{START_MARKER} {time.time():.1f} ({time.strftime('%Y-%m-%d %H:%M:%S')})\n",
+                        encoding="utf-8")
+    _FAST_CANCEL.clear()
+
+    def run() -> None:
+        from backend import fast_index
+        from backend.engine import load_tables, post_index_hook
+
+        ok = False
+        try:
+            with hold_lock():
+                ok = fast_index.build(_fast_log, _FAST_CANCEL.is_set)
+                if ok and not _FAST_CANCEL.is_set():
+                    load_tables.cache_clear()
+                    _fast_log("Workflow generate_text_embeddings started")
+                    post_index_hook()
+                    _fast_log("Workflow generate_text_embeddings finished")
+        except Exception as err:
+            logger.exception("Fast index build crashed")
+            _fast_log(f"ERROR {type(err).__name__}: {err}")
+            ok = False
+        if not _FAST_CANCEL.is_set():
+            _fast_log(f"{RESULT_MARKER} {'success' if ok else 'failed'}")
+
+    _THREAD = threading.Thread(target=run, name="fast-index", daemon=True)
+    _THREAD.start()
+
+
 def start_mock() -> None:
     """Simulated run for MOCK=1: no files, no LLM calls."""
     global _MOCK
@@ -213,6 +260,12 @@ def cancel() -> None:
     global _MOCK
     if _MOCK is not None:
         _MOCK = None
+        return
+    if _THREAD is not None and _THREAD.is_alive():
+        _FAST_CANCEL.set()
+        with open(LOG_FILE, "a", encoding="utf-8") as fh:
+            fh.write(f"{CANCEL_MARKER} by user\n")
+        logger.info("Fast index run cancelled")
         return
     pids = {int((_read_lock() or {}).get("pid", 0))} | ({_PROC.pid} if _PROC is not None else set())
     for pid in filter(None, pids):

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from typing import Literal
@@ -34,6 +35,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+def _warm_up() -> None:
+    """Load Chroma and the local embedding model in the background so the first build and first question don't
+    pay their start-up cost (several seconds)."""
+    import threading
+
+    def warm() -> None:
+        try:
+            from backend.stores import vector_store
+
+            vector_store.get_vectors()
+            vector_store.prewarm(["warm-up"])
+            from backend import llm
+
+            if GEMINI_API_KEY:
+                llm._client()
+            import networkx  # noqa: F401
+            import pandas  # noqa: F401
+        except Exception:
+            logger.warning("Warm-up failed", exc_info=True)
+
+    threading.Thread(target=warm, name="warm-up", daemon=True).start()
+
 
 PENDING_FILE = index_job.LOG_DIR / "corpus_pending.json"
 BUILT_FILE = index_job.LOG_DIR / "corpus_built.json"
@@ -140,6 +165,7 @@ class IndexStatus(BaseModel):
     started: float | None = None
     fresh: bool = False
     built_files: list[str] = Field(default_factory=list)
+    detail: str | None = None       # latest progress line, e.g. "Extract entities and relationships progress: 2/3"
 
 
 class AskRequest(BaseModel):
@@ -218,11 +244,24 @@ def delete_document(name: str) -> dict:
     return {"deleted": name}
 
 
+def _detail(job: index_job.JobStatus) -> str | None:
+    """The most recent progress line of a running build, without the log prefix."""
+    if job.state != "running":
+        return None
+    for line in reversed(job.tail):
+        if re.search(r"Workflow \w+ started", line):
+            return None  # the current stage has no progress line yet
+        m = re.search(r"(?:fast_index|graphrag\.logger\.progress): (.+)$", line)
+        if m and "Workflow" not in m.group(1):
+            return m.group(1).strip()
+    return None
+
+
 def _status() -> IndexStatus:
     job = _sync_index()
     return IndexStatus(state=job.state, stages=[s for s, _ in index_job.STAGES], done=job.done, current=job.current,
                        elapsed_s=round(job.elapsed_s, 1), tail=job.tail, error=job.error, started=job.started,
-                       fresh=index_fresh(), built_files=built_files())
+                       fresh=index_fresh(), built_files=built_files(), detail=_detail(job))
 
 
 @app.get("/api/index")
@@ -242,7 +281,11 @@ def start_index() -> IndexStatus:
     index_job.LOG_DIR.mkdir(parents=True, exist_ok=True)
     PENDING_FILE.write_text(json.dumps({"signature": corpus_signature(), "requested": time.time()}), encoding="utf-8")
     try:
-        index_job.start()
+        # Fast builder by default (a few large Gemini calls, seconds); BUILD_MODE=graphrag runs the full pipeline.
+        if os.getenv("BUILD_MODE", "fast").strip().lower() == "graphrag":
+            index_job.start()
+        else:
+            index_job.start_fast()
     except index_job.IndexLocked as err:
         raise HTTPException(409, str(err)) from err
     time.sleep(0.2)
