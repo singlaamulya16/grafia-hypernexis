@@ -8,14 +8,19 @@ def test_validate_uploads_limits_and_types():
     big = b"x" * (index_job.MAX_BYTES + 1)
     rep = index_job.validate_uploads([("a.txt", b"hello"), ("b.docx", b"x"), ("c.txt", big)])
     assert [n for n, _ in rep.accepted] == ["a.txt"]
-    assert any("b.docx" in e for e in rep.errors) and any("10 MB" in e for e in rep.errors)
+    assert any("b.docx" in e for e in rep.errors) and any("MB limit" in e for e in rep.errors)
     too_many = index_job.validate_uploads([("x.txt", b"x")] * 3, existing=index_job.MAX_FILES - 1)
     assert too_many.errors and not too_many.accepted
 
 
-def test_pdf_without_text_is_warned_and_skipped():
-    rep = index_job.validate_uploads([("scan.pdf", b"%PDF-1.4 not really a pdf")])
-    assert not rep.accepted and rep.warnings
+def test_scanned_pdf_is_accepted_without_warning():
+    rep = index_job.validate_uploads([("scan.pdf", b"%PDF-1.4 scanned pages only")])
+    assert [n for n, _ in rep.accepted] == ["scan.pdf"] and not rep.warnings and not rep.errors
+
+
+def test_upload_limit_is_100_mb():
+    assert index_job.upload_error("big.pdf", 100 * 1024 * 1024) is None
+    assert "100 MB" in index_job.upload_error("big.pdf", 100 * 1024 * 1024 + 1)
 
 
 def test_estimate_scales_with_corpus():

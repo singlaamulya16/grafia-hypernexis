@@ -89,7 +89,7 @@ def upload_and_estimate() -> index_job.UploadReport:
     """Uploader, validation messages and the cost estimate."""
     st.file_uploader("Add documents (.txt, .pdf)", type=["txt", "pdf"], accept_multiple_files=True,
                      key=f"tg_upload_{st.session_state.get(UPLOAD_KEY, 0)}",
-                     help=f"Up to {index_job.MAX_FILES} documents, 10 MB each.")
+                     help=f"Up to {index_job.MAX_FILES} documents, {index_job.MAX_BYTES // (1024 * 1024)} MB each.")
     existing = index_job.input_files()
     report = index_job.validate_uploads(_uploads(), existing=len(existing))
     for msg in report.errors:
