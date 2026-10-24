@@ -225,7 +225,7 @@ function Header() {
             Login
           </a>
           <a
-            href="/#pricing"
+            href="/get-started"
             className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-[1.03]"
           >
             Get Started
@@ -264,7 +264,7 @@ function Hero() {
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-4">
             <a
-              href="/#pricing"
+              href="/get-started"
               className="group inline-flex items-center gap-3 rounded-2xl bg-primary px-8 py-4 text-lg font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-[1.03]"
             >
               <Search className="h-5 w-5" strokeWidth={2.6} />

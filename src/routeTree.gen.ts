@@ -10,11 +10,23 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ChatRouteImport } from './routes/chat'
+import { Route as ExtractRouteImport } from './routes/extract'
 import { Route as GetStartedRouteImport } from './routes/get-started'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChatRoute = ChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExtractRoute = ExtractRouteImport.update({
+  id: '/extract',
+  path: '/extract',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GetStartedRoute = GetStartedRouteImport.update({
@@ -25,27 +37,35 @@ const GetStartedRoute = GetStartedRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/chat': typeof ChatRoute
+  '/extract': typeof ExtractRoute
   '/get-started': typeof GetStartedRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/chat': typeof ChatRoute
+  '/extract': typeof ExtractRoute
   '/get-started': typeof GetStartedRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/chat': typeof ChatRoute
+  '/extract': typeof ExtractRoute
   '/get-started': typeof GetStartedRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/get-started'
+  fullPaths: '/' | '/chat' | '/extract' | '/get-started'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/get-started'
-  id: '__root__' | '/' | '/get-started'
+  to: '/' | '/chat' | '/extract' | '/get-started'
+  id: '__root__' | '/' | '/chat' | '/extract' | '/get-started'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ChatRoute: typeof ChatRoute
+  ExtractRoute: typeof ExtractRoute
   GetStartedRoute: typeof GetStartedRoute
 }
 
@@ -56,6 +76,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chat': {
+      id: '/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof ChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/extract': {
+      id: '/extract'
+      path: '/extract'
+      fullPath: '/extract'
+      preLoaderRoute: typeof ExtractRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/get-started': {
@@ -70,6 +104,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ChatRoute: ChatRoute,
+  ExtractRoute: ExtractRoute,
   GetStartedRoute: GetStartedRoute,
 }
 export const routeTree = rootRouteImport
