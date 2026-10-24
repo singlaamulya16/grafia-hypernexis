@@ -61,6 +61,8 @@ export type IndexStatus = {
   started: number | null;
   fresh: boolean;
   built_files: string[];
+  /** Latest progress line of a running build, e.g. "Extract entities and relationships progress: 2/3". */
+  detail: string | null;
 };
 
 export type AskMode = "auto" | "global" | "local" | "hybrid";
