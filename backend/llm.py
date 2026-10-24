@@ -100,6 +100,46 @@ def chat_text(model: str, system: str, user: str) -> str:
     raise RuntimeError("unreachable")
 
 
+def vision_text(model: str, prompt: str, image_png: bytes) -> str:
+    """Return the model's text reply about one PNG image, cached by model, prompt and image hash."""
+    import base64
+
+    key = _key(model, "vision", f"{prompt}\x00{hashlib.sha256(image_png).hexdigest()}")
+    cached = _cache_get(key)
+    if cached is not None:
+        with _LOCK:
+            COUNTERS["cache_hits"] += 1
+        return cached
+
+    url = "data:image/png;base64," + base64.b64encode(image_png).decode("ascii")
+    delay = FIRST_RETRY_DELAY_S
+    for attempt in range(MAX_RETRIES):
+        try:
+            with _LOCK:
+                COUNTERS["calls"] += 1
+            resp = _client().chat.completions.create(
+                model=model,
+                temperature=0,
+                messages=[{"role": "user", "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": url}},
+                ]}],
+            )
+            if resp.usage:
+                with _LOCK:
+                    COUNTERS["tokens"] += resp.usage.total_tokens
+            text = resp.choices[0].message.content or ""
+            _cache_put(key, text)
+            return text
+        except Exception as err:
+            if not _is_retryable(err) or attempt == MAX_RETRIES - 1:
+                raise
+            logger.warning("Vision retry %d after %s: %s", attempt + 1, type(err).__name__, err)
+            time.sleep(delay)
+            delay *= 2
+    raise RuntimeError("unreachable")
+
+
 def _parse_json(raw: str) -> Any:
     """Parse JSON, tolerating markdown fences and surrounding prose."""
     text = raw.strip()

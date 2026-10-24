@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
 import time
 from pathlib import Path
 from typing import Literal
@@ -19,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from backend import index_job
+from backend import index_job, ingest_jobs
 from backend.config import GEMINI_API_KEY, INPUT_DIR, OUTPUT_DIR
 from backend.contracts import Response
 
@@ -96,6 +95,8 @@ def _sync_index() -> index_job.JobStatus:
 
 def _not_ready_reason(job: index_job.JobStatus) -> str | None:
     """Why questions cannot be answered from the current documents, or None if they can."""
+    if ingest_jobs.busy():
+        return "Your documents are still being read; build the knowledge graph when they are ready."
     if not index_job.input_files():
         return "Upload documents first."
     if job.state == "running":
@@ -110,9 +111,15 @@ def _not_ready_reason(job: index_job.JobStatus) -> str | None:
 # ---------- models ----------
 
 class Document(BaseModel):
-    name: str
+    name: str                       # corpus id (<stem>.txt), used to delete
+    original: str | None = None     # name as uploaded, e.g. report.pdf
     size: int
     modified: float | None = None
+    status: Literal["ready", "queued", "reading", "failed"] = "ready"
+    pages: int = 0
+    done: int = 0
+    error: str | None = None
+    report: dict | None = None      # how a PDF was read (pages from text, from images, figures described)
 
 
 class UploadResult(BaseModel):
@@ -147,35 +154,51 @@ class AskRequest(BaseModel):
 def health() -> dict:
     job = _sync_index()
     return {"ok": True, "api_key": bool(GEMINI_API_KEY), "index_ready": index_ready(), "fresh": index_fresh(),
-            "documents": len(index_job.input_files()), "reason": _not_ready_reason(job)}
+            "documents": len(index_job.input_files()), "reading": ingest_jobs.busy(),
+            "reason": _not_ready_reason(job)}
 
 
 @app.get("/api/documents")
 def list_documents() -> list[Document]:
-    return [Document(name=p.name, size=p.stat().st_size, modified=p.stat().st_mtime) for p in index_job.input_files()]
+    """Corpus documents plus uploads still being read (with live page progress) or that failed to read."""
+    reports = ingest_jobs.load_reports()
+    docs = {}
+    for p in index_job.input_files():
+        rep = reports.get(p.name) or {}
+        docs[p.name] = Document(name=p.name, original=rep.get("name"), size=p.stat().st_size,
+                                modified=p.stat().st_mtime, pages=rep.get("pages", 0), done=rep.get("pages", 0),
+                                report=rep if rep.get("kind") == "pdf" else None)
+    for j in ingest_jobs.jobs():
+        docs[j["target"]] = Document(name=j["target"], original=j["original"], size=j["size"],
+                                     modified=j["started"], status=j["status"], pages=j["pages"], done=j["done"],
+                                     error=j["error"])
+    return sorted(docs.values(), key=lambda d: d.name.lower())
 
 
 @app.post("/api/documents")
 async def upload_documents(files: list[UploadFile] = File(...)) -> UploadResult:
-    """Validate uploads (.txt/.pdf, size, count) and add accepted ones to the corpus."""
+    """Accept .txt/.pdf uploads (up to index_job.MAX_BYTES each). Text files join the corpus at once; PDFs are
+    streamed to disk and read in the background, page by page (GET /api/documents shows live progress)."""
     if index_job.running():
         raise HTTPException(409, "An index build is running; upload after it finishes.")
-    batch = [(f.filename or "upload", await f.read()) for f in files]
-    report = index_job.validate_uploads(batch, existing=len(index_job.input_files()))
-    if report.errors:
-        return UploadResult(errors=[*report.errors, "No files were added; fix the problems above and upload again."],
-                            warnings=report.warnings)
-    if report.accepted:
-        from backend.engine import ingest_files
-
-        with tempfile.TemporaryDirectory() as tmp:
-            paths = []
-            for name, data in report.accepted:
-                p = Path(tmp) / Path(name).name
-                p.write_bytes(data)
-                paths.append(p)
-            ingest_files(paths)
-    return UploadResult(accepted=[n for n, _ in report.accepted], warnings=report.warnings,
+    names = [Path(f.filename or "upload").name for f in files]
+    existing = {p.name for p in index_job.input_files()} | {j["target"] for j in ingest_jobs.jobs()}
+    incoming = {ingest_jobs.target_name(n) for n in names}
+    errors = [e for f, n in zip(files, names) if (e := index_job.upload_error(n, f.size or 0))]
+    if len(existing | incoming) > index_job.MAX_FILES:
+        errors.insert(0, f"At most {index_job.MAX_FILES} documents are allowed ({len(existing)} already uploaded).")
+    if errors:
+        return UploadResult(errors=[*errors, "No files were added; fix the problems above and upload again."])
+    accepted = []
+    for f, name in zip(files, names):
+        raw = ingest_jobs.new_upload_path(name)
+        size = await run_in_threadpool(ingest_jobs.copy_stream, f.file, raw)
+        if name.lower().endswith(".pdf"):
+            ingest_jobs.submit_pdf(name, raw, size)
+        else:
+            await run_in_threadpool(ingest_jobs.add_text, name, raw)
+        accepted.append(name)
+    return UploadResult(accepted=accepted,
                         estimate=index_job.estimate([p.stat().st_size for p in index_job.input_files()]))
 
 
@@ -184,10 +207,14 @@ def delete_document(name: str) -> dict:
     if index_job.running():
         raise HTTPException(409, "An index build is running; delete after it finishes.")
     target = (INPUT_DIR / name).resolve()
-    if target.parent != INPUT_DIR.resolve() or not target.is_file():
+    if target.parent != INPUT_DIR.resolve():
         raise HTTPException(404, f"{name} is not in the corpus.")
-    target.unlink()
-    logger.info("Deleted corpus file %s", target)
+    had_job = ingest_jobs.forget(name)
+    if target.is_file():
+        target.unlink()
+        logger.info("Deleted corpus file %s", target)
+    elif not had_job:
+        raise HTTPException(404, f"{name} is not in the corpus.")
     return {"deleted": name}
 
 
@@ -206,6 +233,8 @@ def index_status() -> IndexStatus:
 @app.post("/api/index")
 def start_index() -> IndexStatus:
     """Start a background GraphRAG build of every document in the corpus."""
+    if ingest_jobs.busy():
+        raise HTTPException(409, "Your documents are still being read; build when they are ready.")
     if not index_job.input_files():
         raise HTTPException(400, "Upload at least one document first.")
     if not GEMINI_API_KEY:

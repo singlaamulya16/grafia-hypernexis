@@ -1,7 +1,6 @@
 """Background GraphRAG index runs: validation, estimates, lock file, subprocess, log-parsed progress."""
 from __future__ import annotations
 
-import io
 import json
 import logging
 import math
@@ -29,7 +28,7 @@ RESULT_MARKER = "INDEX RESULT:"
 START_MARKER = "INDEX STARTED"
 CANCEL_MARKER = "INDEX CANCELLED"
 MAX_FILES = 100
-MAX_BYTES = 10 * 1024 * 1024
+MAX_BYTES = 100 * 1024 * 1024
 STAGES: list[tuple[str, tuple[str, ...]]] = [
     ("chunking", ("load_input_documents", "create_base_text_units", "create_final_documents")),
     ("entities", ("extract_graph", "finalize_graph", "extract_covariates")),
@@ -78,34 +77,30 @@ class JobStatus:
 
 # ---------- validation and estimates ----------
 
-def pdf_text(data: bytes) -> str:
-    """Extractable text of a PDF (empty string if none or unreadable)."""
-    from pypdf import PdfReader
-
-    try:
-        return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(data)).pages).strip()
-    except Exception:
-        logger.warning("Could not read PDF", exc_info=True)
-        return ""
+def upload_error(name: str, size: int) -> str | None:
+    """Why one upload is rejected (type or size), or None if it is fine."""
+    if Path(name).suffix.lower() not in (".txt", ".pdf"):
+        return f"{name}: only .txt and .pdf files are supported."
+    if size > MAX_BYTES:
+        return f"{name}: {size / 1e6:.1f} MB is over the {MAX_BYTES // (1024 * 1024)} MB limit."
+    return None
 
 
 def validate_uploads(files: list[tuple[str, bytes]], existing: int = 0) -> UploadReport:
-    """Check count, size, type and PDF text; accepted files keep their bytes."""
+    """Check count, size and type; accepted files keep their bytes. Scanned PDFs are accepted: their pages
+    are read from images when the document is ingested (see backend.pdf_extract)."""
     rep = UploadReport()
     if existing + len(files) > MAX_FILES:
         rep.errors.append(f"At most {MAX_FILES} documents are allowed ({existing} already in the corpus).")
         return rep
     for name, data in files:
-        ext = Path(name).suffix.lower()
-        if ext not in (".txt", ".pdf"):
-            rep.errors.append(f"{name}: only .txt and .pdf files are supported.")
-        elif len(data) > MAX_BYTES:
-            rep.errors.append(f"{name}: {len(data) / 1e6:.1f} MB is over the 10 MB limit.")
-        elif ext == ".pdf" and not (text := pdf_text(data)):
-            rep.warnings.append(f"{name}: no extractable text (scanned PDF?). It will be skipped.")
+        error = upload_error(name, len(data))
+        if error:
+            rep.errors.append(error)
         else:
             rep.accepted.append((name, data))
-            rep.chars.append(len(text) if ext == ".pdf" else len(data.decode("utf-8", errors="ignore")))
+            rep.chars.append(len(data) // 4 if name.lower().endswith(".pdf")
+                             else len(data.decode("utf-8", errors="ignore")))
     return rep
 
 

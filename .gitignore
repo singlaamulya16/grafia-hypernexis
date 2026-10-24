@@ -16,3 +16,6 @@ eval/results/raw.jsonl
 myproj/kuzu
 myproj/kuzu.*
 myproj/chroma/
+# uploaded documents and their converted text (user data, never committed)
+myproj/input/
+myproj/uploads/

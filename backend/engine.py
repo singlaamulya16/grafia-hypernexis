@@ -81,15 +81,19 @@ def _promote(staging: Path) -> None:
 
 
 def ingest_files(files: list[str | Path]) -> list[Path]:
-    """Copy .txt files and convert .pdf files to .txt inside the GraphRAG input folder."""
-    from pypdf import PdfReader
+    """Copy .txt files and convert .pdf files to .txt inside the GraphRAG input folder (scanned pages and
+    figures are read with Gemini vision, see backend.pdf_extract)."""
+    from backend.pdf_extract import extract_pdf
 
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     for f in map(Path, files):
         target = INPUT_DIR / f"{f.stem}.txt"
         if f.suffix.lower() == ".pdf":
-            text = "\n".join(page.extract_text() or "" for page in PdfReader(str(f)).pages)
+            text, report = extract_pdf(f)
+            if not text:
+                logger.warning("No text could be read from %s: %s", f.name, report.error)
+                continue
             target.write_text(text, encoding="utf-8")
         elif f.suffix.lower() == ".txt":
             shutil.copyfile(f, target)
