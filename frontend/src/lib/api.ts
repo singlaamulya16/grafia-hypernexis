@@ -11,9 +11,35 @@ export type Health = {
   documents: number;
   /** Why questions can't be answered yet, or null when they can. */
   reason: string | null;
+  /** Uploaded documents are still being read. */
+  reading: boolean;
 };
 
-export type ServerDocument = { name: string; size: number; modified: number | null };
+/** How a PDF was read: pages from its text layer, pages read from images (scans), figures described. */
+export type ReadReport = {
+  name: string;
+  pages: number;
+  text_pages: number;
+  ocr_pages: number;
+  figure_pages: number;
+  failed_pages: number[];
+  chars: number;
+  error: string | null;
+};
+
+export type ServerDocument = {
+  /** Corpus id (<stem>.txt); use it to delete. */
+  name: string;
+  /** Name as uploaded, e.g. report.pdf. */
+  original: string | null;
+  size: number;
+  modified: number | null;
+  status: "ready" | "queued" | "reading" | "failed";
+  pages: number;
+  done: number;
+  error: string | null;
+  report: ReadReport | null;
+};
 
 export type UploadResult = {
   accepted: string[];
@@ -101,11 +127,28 @@ const json = (body: unknown): RequestInit => ({
 export const api = {
   health: () => request<Health>("/api/health"),
   documents: () => request<ServerDocument[]>("/api/documents"),
-  upload: (files: File[]) => {
-    const form = new FormData();
-    files.forEach((f) => form.append("files", f));
-    return request<UploadResult>("/api/documents", { method: "POST", body: form });
-  },
+  /** Upload with byte progress (fetch can't report upload progress, so this uses XHR). */
+  upload: (files: File[], onProgress?: (fraction: number) => void) =>
+    new Promise<UploadResult>((resolve, reject) => {
+      const form = new FormData();
+      files.forEach((f) => form.append("files", f));
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}/api/documents`);
+      xhr.responseType = "json";
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response as UploadResult);
+        else {
+          const detail = (xhr.response as { detail?: unknown } | null)?.detail;
+          reject(new Error(typeof detail === "string" ? detail : `Upload failed (${xhr.status})`));
+        }
+      };
+      xhr.onerror = () =>
+        reject(new Error(`Can't reach the backend at ${API_BASE}. Is the API server running?`));
+      xhr.send(form);
+    }),
   deleteDocument: (name: string) =>
     request<{ deleted: string }>(`/api/documents/${encodeURIComponent(name)}`, {
       method: "DELETE",

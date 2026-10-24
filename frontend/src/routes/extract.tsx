@@ -297,7 +297,7 @@ function PanelBody({
 }
 
 function FilesSummary({ docs }: { docs: ServerDocument[] }) {
-  const shown: FileKind[] = docs.slice(0, 4).map((d) => extKind(d.name));
+  const shown: FileKind[] = docs.slice(0, 4).map((d) => extKind(d.original ?? d.name));
   const extra = docs.length - shown.length;
   return (
     <aside
