@@ -192,7 +192,7 @@ function GetStartedPage() {
       } catch (err) {
         setMessages([{ tone: "error", text: (err as Error).message }]);
       }
-    }, 1500);
+    }, 1000);
     return () => clearInterval(id);
   }, [running, refresh]);
 

@@ -156,7 +156,7 @@ function ExtractPage() {
       } catch (err) {
         setError((err as Error).message);
       }
-    }, 1500);
+    }, 600);
     return () => clearInterval(id);
   }, [running, refresh]);
 
@@ -396,7 +396,10 @@ function StatusBanner({
               {STAGE_LABELS[job.current ?? "starting"] ?? "Extracting"}…
             </p>
             <p className="text-sm text-muted-foreground">
-              Extracting information from your documents · {Math.round(job.elapsed_s)} s
+              {job.detail
+                ? `${job.detail.replace(/ progress: /, " · ")} · `
+                : "Extracting information from your documents · "}
+              <CountUp value={Math.round(job.elapsed_s)} duration={500} /> s elapsed
             </p>
           </div>
           <button
