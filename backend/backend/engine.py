@@ -1,0 +1,256 @@
+"""Synchronous wrapper around the graphrag.api Python package.
+
+Installed graphrag 3.3.0 exposes (graphrag.api):
+  global_search(config, entities, communities, community_reports, community_level,
+                dynamic_community_selection, response_type, query, callbacks=None, verbose=False)
+  local_search(config, entities, communities, community_reports, text_units, relationships,
+               covariates, community_level, response_type, query, callbacks=None, verbose=False)
+  drift_search(config, entities, communities, community_reports, text_units, relationships,
+               community_level, response_type, query, callbacks=None, verbose=False)
+  basic_search(config, text_units, response_type, query, callbacks=None, verbose=False)
+  build_index(config, method='standard', is_update_run=False, callbacks=None, ...)
+All return (response, context_data) where context_data is a dict of record lists keyed by
+reports / entities / relationships / claims / sources (sources = text units).
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import shutil
+import sys
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from backend.config import COMMUNITY_LEVEL, GRAPH_ROOT, INPUT_DIR, OUTPUT_DIR
+
+logger = logging.getLogger(__name__)
+
+TABLES = ["documents", "text_units", "entities", "relationships", "communities", "community_reports"]
+STAGING_DIR = GRAPH_ROOT / "output_staging"
+_CWD_LOCK = threading.RLock()
+
+
+@dataclass
+class QueryResult:
+    """Answer text plus the context records GraphRAG used."""
+
+    answer: str
+    context: dict[str, list[dict]] = field(default_factory=dict)
+
+
+@contextmanager
+def _in_graph_root() -> Iterator[None]:
+    """Run GraphRAG with cwd = GRAPH_ROOT (it resolves prompt paths relative to cwd)."""
+    with _CWD_LOCK:
+        cwd = os.getcwd()
+        os.chdir(GRAPH_ROOT)
+        try:
+            yield
+        finally:
+            os.chdir(cwd)
+
+
+def _load_graphrag_config(output_dir: Path = OUTPUT_DIR) -> Any:
+    """Load settings.yaml with absolute storage paths (output_dir holds parquet and LanceDB)."""
+    from graphrag.config.load_config import load_config
+
+    overrides = {
+        "cache": {"storage": {"base_dir": str(GRAPH_ROOT / "cache")}},
+        "output_storage": {"base_dir": str(output_dir)},
+        "vector_store": {"db_uri": str(output_dir / "lancedb")},
+    }
+    return load_config(root_dir=GRAPH_ROOT, cli_overrides=overrides)
+
+
+def _promote(staging: Path) -> None:
+    """Swap a fully built staging index into place, keeping the old one as output_previous."""
+    previous = GRAPH_ROOT / "output_previous"
+    shutil.rmtree(previous, ignore_errors=True)
+    if OUTPUT_DIR.exists():
+        OUTPUT_DIR.rename(previous)
+    staging.rename(OUTPUT_DIR)
+    logger.info("New index promoted to %s (previous kept in %s)", OUTPUT_DIR, previous)
+
+
+def ingest_files(files: list[str | Path]) -> list[Path]:
+    """Copy .txt files and convert .pdf files to .txt inside the GraphRAG input folder."""
+    from pypdf import PdfReader
+
+    INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for f in map(Path, files):
+        target = INPUT_DIR / f"{f.stem}.txt"
+        if f.suffix.lower() == ".pdf":
+            text = "\n".join(page.extract_text() or "" for page in PdfReader(str(f)).pages)
+            target.write_text(text, encoding="utf-8")
+        elif f.suffix.lower() == ".txt":
+            shutil.copyfile(f, target)
+        else:
+            logger.warning("Skipping unsupported file %s", f)
+            continue
+        written.append(target)
+    return written
+
+
+def _stage_callbacks() -> list[Any]:
+    """Workflow callbacks that log 'Workflow <name> started' so a UI can follow progress."""
+    from graphrag.callbacks.noop_workflow_callbacks import NoopWorkflowCallbacks
+
+    class _StageLogger(NoopWorkflowCallbacks):
+        def workflow_start(self, name: str, instance: object) -> None:
+            logger.info("Workflow %s started", name)
+
+        def workflow_end(self, name: str, instance: object) -> None:
+            logger.info("Workflow %s finished", name)
+
+    return [_StageLogger()]
+
+
+def run_index() -> bool:
+    """Build the index into output_staging; promote it to output only when every workflow succeeds."""
+    from graphrag.api import build_index
+
+    shutil.rmtree(STAGING_DIR, ignore_errors=True)
+    with _in_graph_root():
+        results = asyncio.run(build_index(config=_load_graphrag_config(STAGING_DIR), callbacks=_stage_callbacks()))
+    ok = bool(results)
+    for r in results:
+        if r.error:
+            ok = False
+            logger.error("Workflow %s failed: %s", r.workflow, r.error)
+        else:
+            logger.info("Workflow %s done", r.workflow)
+    if ok:
+        _promote(STAGING_DIR)
+    else:
+        logger.error("Index build failed; the previous index in %s is unchanged", OUTPUT_DIR)
+    load_tables.cache_clear()
+    return ok
+
+
+def post_index_hook() -> None:
+    """Load the fresh index into the graph and vector stores; a store failure never fails the index."""
+    try:
+        from backend.stores import loader
+
+        loader.load(reset=True)
+    except Exception as err:
+        logger.warning("Store load failed (%s: %s); the index is fine, run .\\tasks.ps1 load once the "
+                       "graph database is up", type(err).__name__, err)
+
+
+def index_main() -> int:
+    """CLI entry for indexing: take the lock, build, run the post-index hook; returns an exit code."""
+    from backend import index_job
+
+    try:
+        with index_job.hold_lock():
+            ok = run_index()
+            if ok:
+                post_index_hook()
+    except index_job.IndexLocked as err:
+        logger.error("%s", err)
+        return 2
+    except Exception:
+        logger.exception("Indexing crashed")
+        ok = False
+    logger.info("%s %s", index_job.RESULT_MARKER, "success" if ok else "failed")
+    return 0 if ok else 1
+
+
+@lru_cache(maxsize=1)
+def load_tables() -> dict[str, pd.DataFrame]:
+    """Read the GraphRAG output parquet files once and cache them."""
+    tables: dict[str, pd.DataFrame] = {}
+    for name in TABLES:
+        path = OUTPUT_DIR / f"{name}.parquet"
+        if path.exists():
+            tables[name] = pd.read_parquet(path)
+        else:
+            logger.warning("Missing output table %s", path)
+    return tables
+
+
+def _to_records(value: Any) -> list[dict]:
+    """Convert a DataFrame or list into plain dict records, keeping only in-context rows."""
+    if value is None:
+        return []
+    if isinstance(value, pd.DataFrame):
+        value = value.to_dict(orient="records")
+    if isinstance(value, dict):
+        value = [value]
+    records = [dict(r) for r in value if isinstance(r, dict)]
+    if records and "in_context" in records[0]:
+        records = [r for r in records if r.get("in_context", True)]
+    return records
+
+
+def _normalise_context(raw: Any) -> dict[str, list[dict]]:
+    """Map GraphRAG context_data onto entities / relationships / reports / text_units."""
+    if not isinstance(raw, dict):
+        return {}
+    ctx = {k.lower(): _to_records(v) for k, v in raw.items()}
+    return {
+        "entities": ctx.get("entities", []),
+        "relationships": ctx.get("relationships", []),
+        "reports": ctx.get("reports", []),
+        "text_units": ctx.get("sources", []) or ctx.get("text_units", []),
+    }
+
+
+def run_query(question: str, method: str = "global") -> QueryResult:
+    """Run a GraphRAG global, local or basic search synchronously."""
+    t = load_tables()
+    with _in_graph_root():
+        response, context = asyncio.run(_search(question, method, t))
+    answer = response if isinstance(response, str) else str(response)
+    return QueryResult(answer=answer, context=_normalise_context(context))
+
+
+async def _search(question: str, method: str, t: dict[str, pd.DataFrame]) -> tuple[Any, Any]:
+    """Dispatch to the matching graphrag.api search coroutine."""
+    import graphrag.api as api
+
+    config = _load_graphrag_config()
+    response_type = "Multiple Paragraphs"
+    if method == "global":
+        coro = api.global_search(
+            config=config, entities=t["entities"], communities=t["communities"],
+            community_reports=t["community_reports"], community_level=COMMUNITY_LEVEL,
+            dynamic_community_selection=False, response_type=response_type, query=question,
+        )
+    elif method == "local":
+        coro = api.local_search(
+            config=config, entities=t["entities"], communities=t["communities"],
+            community_reports=t["community_reports"], text_units=t["text_units"],
+            relationships=t["relationships"], covariates=None, community_level=COMMUNITY_LEVEL,
+            response_type=response_type, query=question,
+        )
+    elif method == "basic":
+        coro = api.basic_search(
+            config=config, text_units=t["text_units"], response_type=response_type, query=question,
+        )
+    else:
+        raise ValueError(f"Unknown search method: {method}")
+    return await coro
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--index":
+        sys.exit(index_main())
+    q = sys.argv[1] if len(sys.argv) > 1 else "What are the main themes?"
+    m = sys.argv[2] if len(sys.argv) > 2 else "global"
+    res = run_query(q, m)
+    logger.info("Answer:\n%s", res.answer)
+    logger.info("Context keys: %s", {k: len(v) for k, v in res.context.items()})
+    for k, v in res.context.items():
+        if v:
+            logger.info("%s columns: %s", k, list(v[0].keys()))
