@@ -51,6 +51,28 @@ copy .env.example .env                 # then set GEMINI_API_KEY and NEO4J_PASSW
 No API key or index yet? `.\tasks.ps1 mock` runs the same UI on built-in sample data (`MOCK=1`).
 Already indexed but out of quota? `.\tasks.ps1 demo` preloads three recorded answers (`--demo-seed`).
 
+### HTTP API (for web frontends)
+
+`api.py` exposes the same pipeline over HTTP for frontends such as pixel-style-replay:
+
+```powershell
+.\tasks.ps1 api                        # uvicorn api:app --reload --port 8000
+```
+
+The API always serves the real index built from the uploaded documents (no demo data). Each build records the
+exact files it used; after any upload or delete the index is reported as stale and `/api/ask` returns 409 until
+the graph is rebuilt, so answers always come from the current documents.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/health` | `{api_key, index_ready, fresh, documents, reason}` |
+| `GET/POST /api/documents`, `DELETE /api/documents/{name}` | list, upload (multipart `files`, .txt/.pdf), delete corpus files |
+| `GET/POST /api/index`, `POST /api/index/cancel` | build status, start a build, cancel it |
+| `GET /api/insights` | entities, relationships and themes of the current index (`ready: false` with a reason when stale) |
+| `POST /api/ask` | `{question, mode}` → the pipeline `Response` (answer, claims, sources, trace) |
+
+CORS allows any `localhost` port; add other origins with `CORS_ORIGINS` (comma-separated).
+
 ### All `tasks.ps1` targets
 
 | Target | What it does |

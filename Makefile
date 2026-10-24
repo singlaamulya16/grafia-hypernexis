@@ -1,6 +1,6 @@
 PY ?= python
 
-.PHONY: index inspect app mock eval smoke test graph
+.PHONY: index inspect app mock eval smoke test graph api
 
 index:
 	$(PY) -m backend.engine --index
@@ -27,3 +27,6 @@ smoke:
 
 test:
 	OFFLINE=1 $(PY) -m pytest -q tests
+
+api:
+	uvicorn api:app --reload --port 8000

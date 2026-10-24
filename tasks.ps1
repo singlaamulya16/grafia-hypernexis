@@ -1,5 +1,5 @@
-# Windows equivalent of the Makefile: .\tasks.ps1 up|load|index|inspect|graph|app|mock|demo|eval|smoke|test|check
-param([Parameter(Mandatory)][ValidateSet("up", "load", "index", "inspect", "graph", "app", "mock", "demo", "eval", "smoke", "test", "check")][string]$Task)
+# Windows equivalent of the Makefile: .\tasks.ps1 up|load|index|inspect|graph|app|mock|demo|api|eval|smoke|test|check
+param([Parameter(Mandatory)][ValidateSet("up", "load", "index", "inspect", "graph", "app", "mock", "demo", "api", "eval", "smoke", "test", "check")][string]$Task)
 $py = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 Set-Location $PSScriptRoot
 
@@ -18,6 +18,7 @@ switch ($Task) {
     "app"     { & $py -m streamlit run app.py }
     "mock"    { $env:MOCK = "1"; & $py -m streamlit run app.py; Remove-Item Env:MOCK }
     "demo"    { & $py -m streamlit run app.py -- --demo-seed }
+    "api"     { & $py -m uvicorn api:app --reload --port 8000 }
     "eval"    { & $py -m eval.run --resume --sleep 4; & $py -m eval.report }
     "smoke"   { & $py scripts/smoke_test.py }
     "test"    { $env:OFFLINE = "1"; & $py -m pytest -q tests; Remove-Item Env:OFFLINE }

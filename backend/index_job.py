@@ -28,7 +28,7 @@ LOCK_FILE = LOG_DIR / "index.lock"
 RESULT_MARKER = "INDEX RESULT:"
 START_MARKER = "INDEX STARTED"
 CANCEL_MARKER = "INDEX CANCELLED"
-MAX_FILES = 20
+MAX_FILES = 100
 MAX_BYTES = 10 * 1024 * 1024
 STAGES: list[tuple[str, tuple[str, ...]]] = [
     ("chunking", ("load_input_documents", "create_base_text_units", "create_final_documents")),
