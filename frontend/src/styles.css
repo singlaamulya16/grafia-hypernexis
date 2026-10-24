@@ -1,0 +1,373 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * DocuDetect design system — detective-noir theme.
+ *
+ * Dark warm charcoal/brown surfaces, amber-gold accents, cream text.
+ * Single dark theme (no light mode). All colors use oklch.
+ *
+ * The case workspace (upload, extract, chat) uses the "fresh" palette scoped
+ * under `.theme-fresh`: soft leaf-green surfaces with deep green accents.
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-gold-soft: var(--gold-soft);
+  --color-gold-glow: var(--gold-glow);
+  --color-evidence: var(--evidence);
+  --color-leaf-mid: var(--leaf-mid);
+  --color-leaf-deep: var(--leaf-deep);
+  --color-leaf-soft: var(--leaf-soft);
+  --color-ink-deep: var(--ink-deep);
+  --color-badge-red: var(--badge-red);
+  --color-badge-blue: var(--badge-blue);
+  --color-badge-orange: var(--badge-orange);
+  --color-badge-purple: var(--badge-purple);
+  --color-status-blue: var(--status-blue);
+  --color-status-green: var(--status-green);
+  --shadow-soft: 0 18px 50px -24px oklch(0.35 0.08 155 / 35%);
+  --shadow-leaf: 0 14px 34px -14px oklch(0.45 0.12 155 / 55%);
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --shadow-glow: 0 10px 40px -10px oklch(0.82 0.13 85 / 35%);
+  --shadow-lift: 0 16px 40px -16px oklch(0 0 0 / 60%);
+}
+
+:root {
+  --radius: 1rem;
+  --background: oklch(0.14 0.015 60);
+  --foreground: oklch(0.96 0.012 85);
+  --card: oklch(0.18 0.018 60);
+  --card-foreground: oklch(0.96 0.012 85);
+  --popover: oklch(0.16 0.018 60);
+  --popover-foreground: oklch(0.96 0.012 85);
+  --primary: oklch(0.82 0.13 85);
+  --primary-foreground: oklch(0.2 0.04 60);
+  --secondary: oklch(0.24 0.02 60);
+  --secondary-foreground: oklch(0.96 0.012 85);
+  --muted: oklch(0.22 0.02 60);
+  --muted-foreground: oklch(0.75 0.03 80);
+  --accent: oklch(0.26 0.03 70);
+  --accent-foreground: oklch(0.96 0.012 85);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.984 0.003 247.858);
+  --border: oklch(0.32 0.03 70);
+  --input: oklch(0.32 0.03 70);
+  --ring: oklch(0.7 0.1 85);
+  --gold-soft: oklch(0.9 0.08 90);
+  --gold-glow: oklch(0.85 0.14 80);
+  --evidence: oklch(0.78 0.09 70);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@utility text-gradient-gold {
+  background: linear-gradient(120deg, var(--gold-soft), var(--primary) 60%, var(--gold-glow));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility case-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  transition:
+    transform 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+
+  &:hover {
+    transform: translateY(-4px);
+    border-color: color-mix(in oklab, var(--primary) 45%, transparent);
+    box-shadow: var(--shadow-glow);
+  }
+}
+
+/* Case workspace palette: soft leaf greens, deep green actions, file-type badges. */
+.theme-fresh {
+  --background: oklch(0.97 0.018 145);
+  --foreground: oklch(0.24 0.035 158);
+  --card: oklch(0.99 0.008 145);
+  --card-foreground: oklch(0.24 0.035 158);
+  --popover: oklch(0.995 0.005 145);
+  --popover-foreground: oklch(0.24 0.035 158);
+  --primary: oklch(0.45 0.11 154);
+  --primary-foreground: oklch(0.99 0.005 145);
+  --secondary: oklch(0.955 0.025 148);
+  --secondary-foreground: oklch(0.3 0.06 155);
+  --muted: oklch(0.945 0.016 148);
+  --muted-foreground: oklch(0.52 0.025 155);
+  --accent: oklch(0.93 0.035 148);
+  --accent-foreground: oklch(0.3 0.06 155);
+  --border: oklch(0.9 0.022 148);
+  --input: oklch(0.88 0.025 148);
+  --ring: oklch(0.55 0.12 154);
+  --leaf-mid: oklch(0.52 0.13 152);
+  --leaf-deep: oklch(0.38 0.09 158);
+  --leaf-soft: oklch(0.9 0.06 150);
+  --ink-deep: oklch(0.26 0.035 160);
+  --badge-red: oklch(0.6 0.22 27);
+  --badge-blue: oklch(0.56 0.2 258);
+  --badge-orange: oklch(0.76 0.16 62);
+  --badge-purple: oklch(0.62 0.17 295);
+  --status-blue: oklch(0.55 0.19 265);
+  --status-green: oklch(0.55 0.14 150);
+}
+
+@utility text-gradient-leaf {
+  background: linear-gradient(120deg, var(--leaf-deep), var(--leaf-mid) 70%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility glass-card {
+  background: color-mix(in oklab, var(--card) 82%, transparent);
+  backdrop-filter: blur(14px);
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  border-radius: var(--radius-3xl);
+  box-shadow: var(--shadow-soft);
+}
+
+@utility lift-card {
+  transition:
+    transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow 260ms ease,
+    border-color 260ms ease;
+
+  &:hover {
+    transform: translateY(-6px);
+    border-color: color-mix(in oklab, var(--primary) 35%, transparent);
+    box-shadow: var(--shadow-leaf);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--tilt, 0deg));
+  }
+  50% {
+    transform: translateY(-7px) rotate(var(--tilt, 0deg));
+  }
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@keyframes grow-up {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes draw-line {
+  from {
+    stroke-dashoffset: var(--len, 300);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes sheen {
+  from {
+    transform: translateX(-120%) skewX(-20deg);
+  }
+  to {
+    transform: translateX(220%) skewX(-20deg);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 14px transparent;
+  }
+}
+
+@utility animate-fade-up {
+  animation: fade-up 650ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@utility animate-float {
+  animation: float 4.5s ease-in-out infinite;
+}
+
+@utility animate-dash {
+  animation: dash-flow 1.6s linear infinite;
+}
+
+@utility animate-grow-up {
+  transform-origin: bottom;
+  animation: grow-up 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@utility animate-draw {
+  animation: draw-line 1.6s ease-out both;
+}
+
+@utility animate-pulse-ring {
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+
+/* A light sweep across a button on hover. */
+@utility btn-sheen {
+  position: relative;
+  overflow: hidden;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: linear-gradient(90deg, transparent, oklch(1 0 0 / 28%), transparent);
+    transform: translateX(-120%) skewX(-20deg);
+  }
+
+  &:hover::after {
+    animation: sheen 900ms ease;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes draw-unit {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes blink-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Loading placeholder: a soft green band sweeping across. */
+@utility animate-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--secondary) 30%,
+    color-mix(in oklab, var(--leaf-soft) 70%, var(--card)) 50%,
+    var(--secondary) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@utility animate-pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pop-in 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* Draws an SVG line from start to end; pair with pathLength="1" and stroke-dasharray="1". */
+@utility animate-draw-unit {
+  animation: draw-unit 900ms ease-out both;
+}
+
+@utility caret {
+  &::after {
+    content: "▍";
+    margin-left: 1px;
+    color: var(--primary);
+    animation: blink-caret 0.9s steps(1) infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-fresh *,
+  .theme-fresh *::before,
+  .theme-fresh *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
