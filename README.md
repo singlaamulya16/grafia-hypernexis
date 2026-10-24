@@ -73,6 +73,13 @@ the graph is rebuilt, so answers always come from the current documents.
 
 CORS allows any `localhost` port; add other origins with `CORS_ORIGINS` (comma-separated).
 
+Builds started from the API use the **fast builder** (`backend/fast_index.py`): Gemini reads the corpus in up to
+12 parallel calls (entities and relationships as compact JSON), communities come from local Louvain clustering,
+and one more call writes all community reports, producing the same parquet tables as GraphRAG. A small corpus
+builds in about 15–20 s on a free-tier key (15 requests/minute), versus many minutes for GraphRAG's per-chunk
+pipeline. Set `BUILD_MODE=graphrag` to run the full GraphRAG pipeline instead. Scanned PDF pages and figures are
+read with Gemini vision when documents are uploaded (`backend/pdf_extract.py`).
+
 ### All `tasks.ps1` targets
 
 | Target | What it does |

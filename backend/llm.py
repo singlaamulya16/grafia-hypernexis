@@ -66,9 +66,10 @@ def _is_retryable(err: Exception) -> bool:
     return name in {"RateLimitError", "APITimeoutError", "APIConnectionError", "InternalServerError"}
 
 
-def chat_text(model: str, system: str, user: str) -> str:
-    """Return the model's text reply, using the cache when possible."""
-    key = _key(model, system, user)
+def chat_text(model: str, system: str, user: str, reasoning_effort: str | None = None) -> str:
+    """Return the model's text reply, using the cache when possible. reasoning_effort ("minimal", "low", ...)
+    limits the model's thinking: "minimal" roughly halves latency for extraction-style tasks."""
+    key = _key(model if not reasoning_effort else f"{model}@{reasoning_effort}", system, user)
     cached = _cache_get(key)
     if cached is not None:
         with _LOCK:
@@ -80,10 +81,12 @@ def chat_text(model: str, system: str, user: str) -> str:
         try:
             with _LOCK:
                 COUNTERS["calls"] += 1
+            extra = {"reasoning_effort": reasoning_effort} if reasoning_effort else {}
             resp = _client().chat.completions.create(
                 model=model,
                 temperature=0,
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                **extra,
             )
             if resp.usage:
                 with _LOCK:
@@ -155,10 +158,11 @@ def _parse_json(raw: str) -> Any:
         raise
 
 
-def chat_json(model: str, system: str, user: str, schema_hint: str = "") -> dict:
+def chat_json(model: str, system: str, user: str, schema_hint: str = "",
+              reasoning_effort: str | None = None) -> dict:
     """Return the model's reply parsed as a JSON object, retrying once with a repair prompt."""
     sys_prompt = f"{system}\n\nRespond with JSON only, matching: {schema_hint}" if schema_hint else system
-    raw = chat_text(model, sys_prompt, user)
+    raw = chat_text(model, sys_prompt, user, reasoning_effort)
     try:
         return _parse_json(raw)
     except (json.JSONDecodeError, ValueError):
@@ -167,7 +171,7 @@ def chat_json(model: str, system: str, user: str, schema_hint: str = "") -> dict
             f"Your previous reply was not valid JSON:\n{raw}\n\n"
             f"Return only the corrected JSON object matching: {schema_hint}"
         )
-        return _parse_json(chat_text(model, sys_prompt, repair))
+        return _parse_json(chat_text(model, sys_prompt, repair, reasoning_effort))
 
 
 if __name__ == "__main__":
