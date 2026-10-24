@@ -291,6 +291,77 @@
   }
 }
 
+@keyframes shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes draw-unit {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes blink-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Loading placeholder: a soft green band sweeping across. */
+@utility animate-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--secondary) 30%,
+    color-mix(in oklab, var(--leaf-soft) 70%, var(--card)) 50%,
+    var(--secondary) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@utility animate-pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pop-in 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* Draws an SVG line from start to end; pair with pathLength="1" and stroke-dasharray="1". */
+@utility animate-draw-unit {
+  animation: draw-unit 900ms ease-out both;
+}
+
+@utility caret {
+  &::after {
+    content: "▍";
+    margin-left: 1px;
+    color: var(--primary);
+    animation: blink-caret 0.9s steps(1) infinite;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .theme-fresh *,
   .theme-fresh *::before,

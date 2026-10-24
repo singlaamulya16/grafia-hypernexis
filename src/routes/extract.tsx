@@ -21,6 +21,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { CountUp, FitScale, Skeleton } from "@/components/motion";
 import { FileBadge, extKind, type FileKind } from "@/components/file-badge";
 import {
   MapIllustration,
@@ -178,13 +179,13 @@ function ExtractPage() {
 
   return (
     <WorkspaceShell active={1}>
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_auto] [&>*]:min-w-0">
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:flex lg:h-full lg:flex-col lg:py-5">
+        <div className="grid grid-cols-1 items-start gap-6 lg:shrink-0 lg:grid-cols-[1fr_auto] lg:items-center [&>*]:min-w-0">
           <div className="animate-fade-up pt-2">
-            <h1 className="text-4xl font-extrabold tracking-tight text-ink-deep sm:text-6xl">
+            <h1 className="text-4xl font-extrabold tracking-tight text-ink-deep sm:text-6xl lg:text-4xl xl:text-5xl">
               Extract <span className="text-gradient-leaf">Information</span>
             </h1>
-            <p className="mt-4 text-lg text-muted-foreground sm:text-xl">
+            <p className="mt-4 text-lg text-muted-foreground sm:text-xl lg:mt-1.5 lg:text-base">
               Choose how you want to explore the information from your documents.
             </p>
           </div>
@@ -202,7 +203,7 @@ function ExtractPage() {
           onCancel={() => act(api.cancelIndex)}
         />
 
-        <section className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 [&>*]:min-w-0">
+        <section className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 lg:mt-3 lg:min-h-0 lg:flex-1 lg:grid-cols-3 lg:grid-rows-[minmax(0,1fr)] [&>*]:min-w-0">
           <FeatureCard
             n={1}
             title="Map the Info"
@@ -240,7 +241,7 @@ function ExtractPage() {
 
         <ResourcesCard disabled={!ready} onOpen={(t) => open("resources", t)} />
 
-        <div className="mt-6 flex justify-center">
+        <div className="mt-6 flex justify-center lg:hidden">
           <Link
             to="/chat"
             className="group flex items-center gap-2 rounded-full bg-card/80 px-5 py-2.5 text-sm font-semibold text-primary shadow-sm ring-1 ring-border backdrop-blur-md transition-all hover:-translate-y-0.5 hover:shadow-md"
@@ -300,19 +301,19 @@ function FilesSummary({ docs }: { docs: ServerDocument[] }) {
   const extra = docs.length - shown.length;
   return (
     <aside
-      className="glass-card animate-fade-up w-full p-5 lg:w-[34rem]"
+      className="glass-card animate-fade-up w-full p-5 lg:flex lg:w-auto lg:items-center lg:gap-4 lg:px-4 lg:py-3"
       style={{ animationDelay: "100ms" }}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <FileText className="h-7 w-7 text-primary" strokeWidth={1.8} />
-          <h2 className="text-lg font-bold text-ink-deep">Uploaded Files</h2>
+      <div className="flex items-center justify-between lg:shrink-0 lg:flex-col lg:items-start">
+        <div className="flex items-center gap-3 lg:gap-2">
+          <FileText className="h-7 w-7 text-primary lg:h-5 lg:w-5" strokeWidth={1.8} />
+          <h2 className="text-lg font-bold text-ink-deep lg:text-base">Uploaded Files</h2>
         </div>
-        <span className="text-sm text-muted-foreground">
-          {docs.length} file{docs.length === 1 ? "" : "s"}
+        <span className="text-sm text-muted-foreground lg:text-xs">
+          <CountUp value={docs.length} duration={500} /> file{docs.length === 1 ? "" : "s"}
         </span>
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center gap-3 lg:mt-0 lg:flex-nowrap lg:gap-2">
         {shown.length ? (
           shown.map((k, i) => (
             <span
@@ -320,20 +321,20 @@ function FilesSummary({ docs }: { docs: ServerDocument[] }) {
               className="animate-fade-up transition-transform hover:-translate-y-1"
               style={{ animationDelay: `${150 + i * 60}ms` }}
             >
-              <FileBadge kind={k} />
+              <FileBadge kind={k} size="sm" />
             </span>
           ))
         ) : (
           <span className="text-sm text-muted-foreground">No files uploaded yet.</span>
         )}
         {extra > 0 ? (
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary text-sm font-semibold text-muted-foreground">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-sm font-semibold text-muted-foreground">
             +{extra}
           </span>
         ) : null}
         <Link
           to="/get-started"
-          className="group ml-auto flex items-center gap-2 whitespace-nowrap rounded-xl bg-secondary px-4 py-2.5 text-sm font-semibold text-ink-deep transition-colors hover:bg-accent"
+          className="group ml-auto flex items-center gap-2 whitespace-nowrap rounded-xl bg-secondary px-4 py-2.5 text-sm font-semibold text-ink-deep transition-colors hover:bg-accent lg:ml-2"
         >
           View Files
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -371,15 +372,21 @@ function StatusBanner({
   }
   if (!job) {
     return (
-      <div className="glass-card mt-6 flex items-center gap-3 px-5 py-4 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Checking extraction status…
+      <div
+        className="glass-card mt-6 flex items-center gap-4 px-5 py-4 lg:mt-3 lg:shrink-0"
+        aria-label="Checking extraction status"
+      >
+        <Skeleton className="h-5 w-5 rounded-full" />
+        <Skeleton className="h-4 w-44" />
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-4 w-28" />
       </div>
     );
   }
   if (job.state === "running") {
     const pct = Math.round(((job.done.length + 0.5) / job.stages.length) * 100);
     return (
-      <section className="glass-card animate-fade-up mt-6 p-5">
+      <section className="glass-card animate-fade-up mt-6 p-5 lg:mt-3 lg:shrink-0 lg:p-4">
         <div className="flex flex-wrap items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-status-blue/10 text-status-blue">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -400,20 +407,22 @@ function StatusBanner({
             <Square className="h-4 w-4" /> Cancel
           </button>
         </div>
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-secondary">
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-secondary lg:mt-3">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-leaf-mid to-primary transition-all duration-700"
+            className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-leaf-mid to-primary transition-all duration-700"
             style={{ width: `${pct}%` }}
-          />
+          >
+            <span className="absolute inset-0 animate-shimmer opacity-30" />
+          </div>
         </div>
-        <ol className="mt-4 grid gap-2 sm:grid-cols-5">
+        <ol className="mt-4 grid gap-2 sm:grid-cols-5 lg:mt-3">
           {job.stages.map((s) => {
             const done = job.done.includes(s);
             const current = job.current === s;
             return (
               <li key={s} className="flex items-center gap-2 text-xs">
                 {done ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 fill-status-green text-card" />
+                  <CheckCircle2 className="animate-pop h-4 w-4 shrink-0 fill-status-green text-card" />
                 ) : current ? (
                   <Loader2 className="h-4 w-4 shrink-0 animate-spin text-status-blue" />
                 ) : (
@@ -472,9 +481,12 @@ function StatusBanner({
   }
   const s = insights.stats;
   return (
-    <section className="glass-card animate-fade-up mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4">
+    <section className="glass-card animate-fade-up mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4 lg:mt-3 lg:shrink-0 lg:py-2.5">
       <span className="flex items-center gap-2 font-semibold text-status-green">
-        <CheckCircle2 className="h-5 w-5 fill-status-green text-card" />
+        <span className="relative flex">
+          <span className="animate-pulse-ring absolute inset-0 rounded-full" />
+          <CheckCircle2 className="animate-pop h-5 w-5 fill-status-green text-card" />
+        </span>
         Extraction complete
       </span>
       {[
@@ -484,9 +496,20 @@ function StatusBanner({
         ["themes", s.communities],
       ].map(([label, value]) => (
         <span key={label} className="text-sm text-muted-foreground">
-          <span className="font-bold text-ink-deep">{value}</span> {label}
+          <span className="font-bold text-ink-deep">
+            <CountUp value={Number(value)} />
+          </span>{" "}
+          {label}
         </span>
       ))}
+      <Link
+        to="/chat"
+        className="group ml-auto hidden items-center gap-1.5 rounded-xl bg-secondary px-3.5 py-2 text-sm font-semibold text-primary transition-colors hover:bg-accent lg:flex"
+      >
+        <MessageSquare className="h-4 w-4" />
+        Ask in Chat
+        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+      </Link>
     </section>
   );
 }
@@ -502,7 +525,7 @@ function Banner({
 }) {
   return (
     <section
-      className={`animate-fade-up mt-6 flex flex-wrap items-center gap-3 rounded-3xl border px-5 py-4 text-sm shadow-sm backdrop-blur-md ${
+      className={`animate-fade-up mt-6 flex flex-wrap items-center gap-3 rounded-3xl border px-5 py-4 text-sm shadow-sm backdrop-blur-md lg:mt-3 lg:shrink-0 lg:py-2.5 ${
         tone === "error"
           ? "border-destructive/30 bg-destructive/10 text-destructive"
           : "border-primary/20 bg-card/85 text-foreground"
@@ -558,7 +581,7 @@ function FeatureCard({
 }) {
   return (
     <article
-      className={`glass-card group animate-fade-up relative flex flex-col p-5 sm:p-6 ${
+      className={`glass-card group animate-fade-up relative flex flex-col p-5 sm:p-6 lg:min-h-0 lg:p-5 ${
         disabled ? "opacity-70" : "lift-card cursor-pointer"
       }`}
       style={{ animationDelay: `${delay}ms` }}
@@ -568,7 +591,9 @@ function FeatureCard({
         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-secondary text-xl font-bold text-primary transition-colors duration-300 group-hover:bg-primary group-hover:text-primary-foreground">
           {n}
         </span>
-        <h2 className="mt-1.5 flex-1 text-2xl font-bold tracking-tight text-ink-deep">{title}</h2>
+        <h2 className="mt-1.5 flex-1 text-2xl font-bold tracking-tight text-ink-deep lg:text-xl xl:text-2xl">
+          {title}
+        </h2>
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -581,8 +606,12 @@ function FeatureCard({
           <ArrowRight className="h-5 w-5 transition-transform duration-300 group-hover:translate-x-0.5" />
         </button>
       </div>
-      <p className="mt-3 text-base leading-relaxed text-muted-foreground">{description}</p>
-      <div className="my-5 flex-1">{children}</div>
+      <p className="mt-3 text-base leading-relaxed text-muted-foreground lg:mt-2 lg:text-sm">
+        {description}
+      </p>
+      <FitScale baseHeight={240} className="my-5 h-60 lg:my-3 lg:h-auto lg:flex-1">
+        {children}
+      </FitScale>
       <div className="flex flex-wrap gap-2">
         {chips.map((c) => (
           <button
@@ -611,47 +640,48 @@ function ResourcesCard({
 }) {
   return (
     <section
-      className={`glass-card group animate-fade-up mt-5 grid items-center gap-6 p-5 sm:p-6 lg:grid-cols-[1fr_auto_auto] ${
+      className={`glass-card group animate-fade-up mt-5 grid items-center gap-6 p-5 sm:p-6 lg:mt-3 lg:shrink-0 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:gap-5 lg:py-3.5 ${
         disabled ? "opacity-70" : "lift-card"
       }`}
       style={{ animationDelay: "270ms" }}
     >
-      <div>
-        <div className="flex items-center gap-5">
-          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-leaf transition-transform duration-300 group-hover:rotate-[-8deg] group-hover:scale-105">
-            <Search className="h-8 w-8" strokeWidth={2.4} />
-          </span>
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight text-ink-deep">Find All Resources</h2>
-            <p className="mt-1 text-muted-foreground">
-              Search and discover additional reliable sources related to your documents.
-            </p>
-          </div>
-        </div>
-        <div className="mt-5 flex flex-wrap gap-2">
-          {RESOURCE_KINDS.map((k) => (
-            <button
-              key={k.id}
-              onClick={() => onOpen(k.id)}
-              disabled={disabled}
-              className="flex items-center gap-1.5 rounded-full bg-secondary px-4 py-2 text-sm font-medium text-ink-deep transition-all hover:-translate-y-0.5 hover:bg-primary hover:text-primary-foreground disabled:hover:translate-y-0 disabled:hover:bg-secondary disabled:hover:text-ink-deep"
-            >
-              <k.icon className="h-3.5 w-3.5" />
-              {k.label}
-            </button>
-          ))}
+      <div className="flex items-center gap-5 lg:gap-3.5">
+        <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-leaf transition-transform duration-300 group-hover:rotate-[-8deg] group-hover:scale-105 lg:h-11 lg:w-11 lg:rounded-xl">
+          <Search className="h-8 w-8 lg:h-5 lg:w-5" strokeWidth={2.4} />
+        </span>
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-ink-deep lg:text-lg">
+            Find All Resources
+          </h2>
+          <p className="mt-1 text-muted-foreground lg:mt-0 lg:max-w-xs lg:text-xs">
+            Search and discover additional reliable sources related to your documents.
+          </p>
         </div>
       </div>
-      <div className="hidden justify-center md:flex">
+      <div className="flex flex-wrap gap-2 lg:justify-center">
+        {RESOURCE_KINDS.map((k, i) => (
+          <button
+            key={k.id}
+            onClick={() => onOpen(k.id)}
+            disabled={disabled}
+            className="animate-fade-up flex items-center gap-1.5 rounded-full bg-secondary px-4 py-2 text-sm font-medium text-ink-deep transition-all hover:-translate-y-0.5 hover:bg-primary hover:text-primary-foreground disabled:hover:translate-y-0 disabled:hover:bg-secondary disabled:hover:text-ink-deep lg:px-3 lg:py-1.5 lg:text-xs"
+            style={{ animationDelay: `${320 + i * 50}ms` }}
+          >
+            <k.icon className="h-3.5 w-3.5" />
+            {k.label}
+          </button>
+        ))}
+      </div>
+      <div className="hidden justify-center md:flex lg:hidden">
         <ResourcesIllustration />
       </div>
       <button
         onClick={() => onOpen()}
         disabled={disabled}
-        className="btn-sheen group/btn flex items-center justify-center gap-3 rounded-2xl bg-primary px-8 py-5 text-lg font-semibold text-primary-foreground shadow-leaf transition-all duration-300 hover:-translate-y-0.5 hover:bg-leaf-deep disabled:opacity-50 disabled:hover:translate-y-0"
+        className="btn-sheen group/btn flex items-center justify-center gap-3 whitespace-nowrap rounded-2xl bg-primary px-8 py-5 text-lg font-semibold text-primary-foreground shadow-leaf transition-all duration-300 hover:-translate-y-0.5 hover:bg-leaf-deep disabled:opacity-50 disabled:hover:translate-y-0 lg:rounded-xl lg:px-5 lg:py-3 lg:text-sm"
       >
         Find All Resources
-        <ArrowRight className="h-5 w-5 transition-transform group-hover/btn:translate-x-1" />
+        <ArrowRight className="h-5 w-5 transition-transform group-hover/btn:translate-x-1 lg:h-4 lg:w-4" />
       </button>
     </section>
   );

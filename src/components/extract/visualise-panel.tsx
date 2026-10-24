@@ -20,6 +20,7 @@ import {
   prettyType,
 } from "@/components/extract/entity-types";
 import { EmptyState, PanelTabs } from "@/components/extract/panel-kit";
+import { CountUp } from "@/components/motion";
 
 export type VisualiseTab = "charts" | "timelines" | "trends" | "comparisons";
 
@@ -106,7 +107,9 @@ function Charts({ data }: { data: Insights }) {
             className="animate-fade-up rounded-2xl bg-gradient-to-br from-secondary to-card p-4 ring-1 ring-border"
             style={{ animationDelay: `${i * 60}ms` }}
           >
-            <p className="text-2xl font-bold text-primary">{value}</p>
+            <p className="text-2xl font-bold text-primary">
+              <CountUp value={Number(value)} />
+            </p>
             <p className="text-xs text-muted-foreground">{label}</p>
           </div>
         ))}

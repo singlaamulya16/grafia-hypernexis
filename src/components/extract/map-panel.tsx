@@ -10,6 +10,7 @@ import {
   type Category,
 } from "@/components/extract/entity-types";
 import { EmptyState, PanelTabs } from "@/components/extract/panel-kit";
+import { CountUp } from "@/components/motion";
 
 export type MapTab = "summary" | "entities" | "facts";
 
@@ -50,7 +51,9 @@ function Summary({ data }: { data: Insights }) {
             <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${c.soft}`}>
               <c.icon className="h-4 w-4" />
             </span>
-            <p className="mt-2 text-2xl font-bold text-ink-deep">{counts[c.id] ?? 0}</p>
+            <p className="mt-2 text-2xl font-bold text-ink-deep">
+              <CountUp value={counts[c.id] ?? 0} />
+            </p>
             <p className="text-xs text-muted-foreground">{c.label}</p>
           </div>
         ))}

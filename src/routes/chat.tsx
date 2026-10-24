@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
+  CheckCircle2,
   FileText,
   Loader2,
   Network,
@@ -11,6 +12,7 @@ import {
   ShieldQuestion,
 } from "lucide-react";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { RevealText, Skeleton } from "@/components/motion";
 import { KnowledgeGraph } from "@/components/extract/relation-panel";
 import { prettyName } from "@/components/extract/entity-types";
 import { api, type AskMode, type AskResponse, type Health, type Insights } from "@/lib/api";
@@ -113,8 +115,8 @@ function ChatPage() {
 
   return (
     <WorkspaceShell active={4}>
-      <main className="mx-auto grid max-w-[1500px] grid-cols-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] [&>*]:min-w-0">
-        <section className="glass-card animate-fade-up flex flex-col p-5 sm:p-6 lg:h-[calc(100vh-7.5rem)]">
+      <main className="mx-auto grid max-w-[1500px] grid-cols-1 gap-6 px-4 py-6 sm:px-6 lg:h-full lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:grid-rows-[minmax(0,1fr)] lg:py-5 [&>*]:min-w-0">
+        <section className="glass-card animate-fade-up flex flex-col p-5 sm:p-6 lg:min-h-0">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h1 className="text-3xl font-extrabold tracking-tight text-ink-deep">
@@ -273,7 +275,7 @@ function EvidencePanel({
   const shown = nodes.filter((n) => known.has(n));
   return (
     <aside
-      className="glass-card animate-fade-up flex flex-col p-5 sm:p-6 lg:sticky lg:top-24 lg:h-[calc(100vh-7.5rem)] lg:overflow-y-auto"
+      className="glass-card animate-fade-up flex flex-col p-5 sm:p-6 lg:min-h-0 lg:overflow-y-auto"
       style={{ animationDelay: "120ms" }}
     >
       <div className="flex items-start gap-3">
@@ -300,9 +302,12 @@ function EvidencePanel({
             highlight={shown}
           />
         ) : (
-          <div className="flex h-full min-h-[18rem] flex-col items-center justify-center rounded-2xl border border-dashed border-border text-center">
-            <Network className="h-10 w-10 text-muted-foreground/60" />
-            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
+          <div className="relative flex h-full min-h-[18rem] flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border text-center">
+            {!blockedReason ? (
+              <Skeleton className="absolute inset-0 rounded-2xl opacity-60" />
+            ) : null}
+            <Network className="relative h-10 w-10 text-muted-foreground/60" />
+            <p className="relative mt-3 max-w-xs text-sm text-muted-foreground">
               {blockedReason ?? "Loading the knowledge graph…"}
             </p>
           </div>
@@ -380,9 +385,7 @@ function TurnView({
             {turn.error}
           </p>
         ) : !r ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Investigating…
-          </p>
+          <ThinkingSteps />
         ) : (
           <AnswerView r={r} />
         )}
@@ -392,76 +395,123 @@ function TurnView({
 }
 
 function AnswerView({ r }: { r: AskResponse }) {
-  const docs = Array.from(new Set(r.sources.map((s) => s.doc).filter(Boolean)));
+  const docs = Array.from(new Set(r.sources.map((src) => src.doc).filter(Boolean)));
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span
-          className={`rounded-lg px-2.5 py-1 font-semibold ${
-            r.abstained ? "bg-muted text-muted-foreground" : "bg-status-green/10 text-status-green"
-          }`}
-        >
-          {ROUTE_LABEL[r.route] ?? r.route}
-        </span>
-        {r.timings_ms["total"] != null ? (
-          <span className="text-muted-foreground">
-            {(r.timings_ms["total"] / 1000).toFixed(1)} s
-          </span>
-        ) : null}
-      </div>
-
-      <Markdownish text={r.answer} />
-
-      {r.abstained && r.abstain_reason ? (
-        <p className="flex items-start gap-2 text-sm text-muted-foreground">
-          <ShieldQuestion className="mt-0.5 h-4 w-4 shrink-0" />
-          {r.abstain_reason}
-        </p>
-      ) : null}
-
-      {r.claims.length > 0 ? (
-        <details className="group rounded-xl bg-card px-4 py-3">
-          <summary className="cursor-pointer text-sm font-semibold">
-            {r.claims.length} verified claim{r.claims.length === 1 ? "" : "s"}
-          </summary>
-          <ul className="mt-3 space-y-3">
-            {r.claims.map((c, i) => (
-              <li key={i} className="text-sm">
-                <p className="font-medium">{c.text}</p>
-                {c.evidence.map((e, j) => (
-                  <blockquote
-                    key={j}
-                    className="mt-1.5 flex gap-2 border-l-2 border-primary/40 pl-3 text-muted-foreground"
-                  >
-                    <Quote className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    <span className="italic">{e.quote}</span>
-                  </blockquote>
-                ))}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-
-      {docs.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {docs.map((d) => (
+    <RevealText
+      text={r.answer}
+      render={(visible, done) => (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span
-              key={d}
-              className="flex items-center gap-1.5 rounded-lg bg-card px-2.5 py-1 text-xs text-muted-foreground"
+              className={`animate-pop rounded-lg px-2.5 py-1 font-semibold ${
+                r.abstained
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-status-green/10 text-status-green"
+              }`}
             >
-              <FileText className="h-3.5 w-3.5" />
-              {d}
+              {ROUTE_LABEL[r.route] ?? r.route}
             </span>
-          ))}
+            {r.timings_ms["total"] != null ? (
+              <span className="text-muted-foreground">
+                {(r.timings_ms["total"] / 1000).toFixed(1)} s
+              </span>
+            ) : null}
+          </div>
+
+          <Markdownish text={visible} caret={!done} />
+
+          {done && r.abstained && r.abstain_reason ? (
+            <p className="animate-fade-up flex items-start gap-2 text-sm text-muted-foreground">
+              <ShieldQuestion className="mt-0.5 h-4 w-4 shrink-0" />
+              {r.abstain_reason}
+            </p>
+          ) : null}
+
+          {done && r.claims.length > 0 ? (
+            <details className="animate-fade-up group rounded-xl bg-card px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold">
+                <CheckCircle2 className="mr-1.5 inline h-4 w-4 fill-status-green text-card" />
+                {r.claims.length} verified claim{r.claims.length === 1 ? "" : "s"}
+              </summary>
+              <ul className="mt-3 space-y-3">
+                {r.claims.map((c, i) => (
+                  <li
+                    key={i}
+                    className="animate-fade-up text-sm"
+                    style={{ animationDelay: `${i * 60}ms` }}
+                  >
+                    <p className="font-medium">{c.text}</p>
+                    {c.evidence.map((e, j) => (
+                      <blockquote
+                        key={j}
+                        className="mt-1.5 flex gap-2 border-l-2 border-primary/40 pl-3 text-muted-foreground"
+                      >
+                        <Quote className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span className="italic">{e.quote}</span>
+                      </blockquote>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+
+          {done && docs.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {docs.map((d, i) => (
+                <span
+                  key={d}
+                  className="animate-fade-up flex items-center gap-1.5 rounded-lg bg-card px-2.5 py-1 text-xs text-muted-foreground"
+                  style={{ animationDelay: `${120 + i * 60}ms` }}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  {d}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-    </div>
+      )}
+    />
+  );
+}
+
+const THINKING = [
+  "Understanding your question",
+  "Searching the knowledge graph",
+  "Checking quotes against your files",
+];
+
+/** The answering pipeline's stages, advancing while the request runs; the last stays active until it returns. */
+function ThinkingSteps() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const timers = [setTimeout(() => setStep(1), 1200), setTimeout(() => setStep(2), 4000)];
+    return () => timers.forEach(clearTimeout);
+  }, []);
+  return (
+    <ol className="space-y-2 text-sm" aria-live="polite">
+      {THINKING.map((label, i) =>
+        i > step ? null : (
+          <li key={label} className="animate-fade-up flex items-center gap-2">
+            {i < step ? (
+              <CheckCircle2 className="animate-pop h-4 w-4 fill-status-green text-card" />
+            ) : (
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            )}
+            <span className={i < step ? "text-muted-foreground" : "text-foreground"}>
+              {label}
+              {i === step ? "…" : ""}
+            </span>
+          </li>
+        ),
+      )}
+    </ol>
   );
 }
 
 // Answers use light markdown: paragraphs, numbered/bulleted lines and **bold**.
-function Markdownish({ text }: { text: string }) {
+function Markdownish({ text, caret }: { text: string; caret?: boolean }) {
   const bold = (line: string) =>
     line
       .split(/(\*\*[^*]+\*\*)/g)
@@ -472,21 +522,22 @@ function Markdownish({ text }: { text: string }) {
           part
         ),
       );
+  const lines = text.split(/\n+/).filter((l) => l.trim());
   return (
     <div className="space-y-2 text-sm leading-relaxed">
-      {text
-        .split(/\n+/)
-        .filter((l) => l.trim())
-        .map((line, i) => {
-          const item = line.match(/^\s*(?:\d+\.|[-*])\s+(.*)$/);
-          return item ? (
-            <p key={i} className="pl-4 -indent-4">
-              • {bold(item[1] ?? "")}
-            </p>
-          ) : (
-            <p key={i}>{bold(line)}</p>
-          );
-        })}
+      {lines.map((line, i) => {
+        const tail = caret && i === lines.length - 1 ? "caret" : "";
+        const item = line.match(/^\s*(?:\d+\.|[-*])\s+(.*)$/);
+        return item ? (
+          <p key={i} className={`pl-4 -indent-4 ${tail}`}>
+            • {bold(item[1] ?? "")}
+          </p>
+        ) : (
+          <p key={i} className={tail}>
+            {bold(line)}
+          </p>
+        );
+      })}
     </div>
   );
 }

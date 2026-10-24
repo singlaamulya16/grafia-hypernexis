@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { ArrowRight, FileText, Globe, Link2 } from "lucide-react";
 import { CATEGORIES, type Category } from "@/components/extract/entity-types";
+import { CountUp } from "@/components/motion";
 
 /** Documents flowing into a "Key Information" list, with live counts per category. */
 export function MapIllustration({ counts }: { counts: Partial<Record<Category, number>> }) {
@@ -38,7 +39,7 @@ export function MapIllustration({ counts }: { counts: Partial<Record<Category, n
               <span className="truncate">{c.label === "Dates & Events" ? "Dates" : c.label}</span>
               {counts[c.id] != null ? (
                 <span className="ml-auto rounded-md bg-card px-1.5 text-[10px] font-semibold text-primary">
-                  {counts[c.id]}
+                  <CountUp value={counts[c.id] ?? 0} />
                 </span>
               ) : null}
             </li>

@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { CountUp, FitScale } from "@/components/motion";
 import { FileBadge, KIND_LABEL, extKind, formatSize, type FileKind } from "@/components/file-badge";
 import { api, type Health, type IndexStatus, type ServerDocument } from "@/lib/api";
 
@@ -184,12 +185,12 @@ function GetStartedPage() {
 
   return (
     <WorkspaceShell active={0}>
-      <main className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[1.15fr_1fr] [&>*]:min-w-0">
-        <div className="space-y-5">
+      <main className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:h-full lg:grid-cols-[1.15fr_1fr] lg:grid-rows-[minmax(0,1fr)] lg:py-5 [&>*]:min-w-0">
+        <div className="space-y-5 lg:flex lg:min-h-0 lg:flex-col lg:gap-4 lg:space-y-0">
           <UploadCard onFiles={addFiles} disabled={busy || running} uploading={uploading} />
           {messages.length > 0 ? <Messages items={messages} /> : null}
         </div>
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-5 lg:min-h-0 lg:gap-4">
           <FilesCard
             files={files}
             loaded={loaded}
@@ -273,11 +274,11 @@ function UploadCard({
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <section className="glass-card animate-fade-up p-5 sm:p-10">
+    <section className="glass-card animate-fade-up p-5 sm:p-10 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:p-8">
       <h1 className="text-3xl font-extrabold tracking-tight text-ink-deep sm:text-5xl lg:text-[2.75rem] xl:whitespace-nowrap 2xl:text-5xl">
         1. Upload <span className="text-gradient-leaf">Your Documents</span>
       </h1>
-      <p className="mt-4 text-lg text-muted-foreground">
+      <p className="mt-4 text-lg text-muted-foreground lg:mt-2">
         Add your files to get started. We'll analyse them in the next steps.
       </p>
 
@@ -292,14 +293,16 @@ function UploadCard({
           setDragOver(false);
           if (!disabled) onFiles(e.dataTransfer.files);
         }}
-        className={`group relative mt-8 rounded-3xl border-2 border-dashed px-4 py-6 text-center transition-all duration-300 sm:p-10 ${
+        className={`group relative mt-8 rounded-3xl border-2 border-dashed px-4 py-6 text-center transition-all duration-300 sm:p-10 lg:mt-5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:justify-center lg:py-5 ${
           dragOver
             ? "scale-[1.01] border-primary bg-secondary/80"
             : "border-border bg-background/40 hover:border-leaf-mid/60 hover:bg-secondary/40"
         }`}
       >
-        <FileFan spread={dragOver} />
-        <p className="mt-6 text-2xl font-bold text-ink-deep">
+        <FitScale baseHeight={224} className="h-48 sm:h-56 lg:h-auto lg:max-h-56 lg:flex-1">
+          <FileFan spread={dragOver} />
+        </FitScale>
+        <p className="mt-6 text-2xl font-bold text-ink-deep lg:mt-3">
           {dragOver ? "Drop to add your files" : "Drag & drop your files here"}
         </p>
         <p className="mt-2 text-sm text-muted-foreground">or</p>
@@ -412,7 +415,7 @@ function FileFan({ spread }: { spread: boolean }) {
   ];
 
   return (
-    <div className="relative mx-auto h-48 w-full max-w-[22rem] sm:h-56">
+    <div className="relative mx-auto h-full w-full max-w-[22rem]">
       <svg viewBox="0 0 352 224" className="absolute inset-0 h-full w-full" aria-hidden="true">
         {["M150 4 L152 22", "M84 50 L96 66", "M262 46 L250 64", "M36 120 L52 134"].map((d) => (
           <path
@@ -488,7 +491,10 @@ function FilesCard({
   onClear: () => void;
 }) {
   return (
-    <aside className="glass-card animate-fade-up p-4 sm:p-6" style={{ animationDelay: "120ms" }}>
+    <aside
+      className="glass-card animate-fade-up p-4 sm:p-6 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
+      style={{ animationDelay: "120ms" }}
+    >
       <div className="flex flex-wrap items-center justify-between gap-4 pb-2">
         <div className="flex items-center gap-3">
           <FileText className="h-7 w-7 text-primary" strokeWidth={1.8} />
@@ -496,7 +502,7 @@ function FilesCard({
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-muted-foreground">
-            {files.length} file{files.length === 1 ? "" : "s"}
+            <CountUp value={files.length} duration={500} /> file{files.length === 1 ? "" : "s"}
           </span>
           <button
             onClick={onClear}
@@ -516,7 +522,7 @@ function FilesCard({
           ))}
         </div>
       ) : files.length === 0 ? (
-        <div className="flex flex-col items-center py-16 text-center">
+        <div className="flex flex-col items-center py-16 text-center lg:flex-1 lg:justify-center lg:py-6">
           <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary text-primary">
             <FileStack className="h-8 w-8" />
           </span>
@@ -526,7 +532,9 @@ function FilesCard({
           </p>
         </div>
       ) : (
-        <ul className={files.length > 6 ? "max-h-[520px] overflow-y-auto pr-1" : ""}>
+        <ul
+          className={`lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1 ${files.length > 6 ? "max-h-[520px] overflow-y-auto pr-1 lg:max-h-none" : ""}`}
+        >
           {files.map((file, i) => (
             <FileRow
               key={file.name}

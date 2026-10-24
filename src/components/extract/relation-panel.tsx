@@ -201,7 +201,7 @@ export function KnowledgeGraph({
           aria-label="Knowledge graph of the most connected entities"
           onClick={() => onSelect(null)}
         >
-          {edges.map((e) => {
+          {edges.map((e, i) => {
             const a = byName.get(e.source)!;
             const b = byName.get(e.target)!;
             const on = neighbours
@@ -219,9 +219,13 @@ export function KnowledgeGraph({
                 stroke={on ? "var(--primary)" : "var(--leaf-mid)"}
                 strokeOpacity={active ? (on ? 0.9 : 0.08) : 0.3}
                 strokeWidth={on ? 2.2 : 1.2}
-                strokeDasharray={on ? "5 4" : undefined}
-                className={on ? "animate-dash" : undefined}
-                style={{ transition: "stroke-opacity 200ms" }}
+                pathLength={on ? undefined : 1}
+                strokeDasharray={on ? "5 4" : "1"}
+                className={on ? "animate-dash" : "animate-draw-unit"}
+                style={{
+                  transition: "stroke-opacity 200ms",
+                  animationDelay: on ? undefined : `${200 + (i % 30) * 20}ms`,
+                }}
               />
             );
           })}
@@ -244,10 +248,7 @@ export function KnowledgeGraph({
                   onSelect(n.name);
                 }}
               >
-                <g
-                  className="animate-fade-up"
-                  style={{ animationDelay: `${Math.min(i, 40) * 15}ms` }}
-                >
+                <g className="animate-pop" style={{ animationDelay: `${Math.min(i, 40) * 18}ms` }}>
                   {isSel || isLit ? (
                     <circle
                       r={n.r + 6}
@@ -255,7 +256,7 @@ export function KnowledgeGraph({
                       stroke="var(--primary)"
                       strokeWidth="2"
                       strokeDasharray={isLit && !isSel ? "4 3" : undefined}
-                      className={isLit && !isSel ? "animate-dash" : undefined}
+                      className={isLit && !isSel ? "animate-dash animate-pop" : "animate-pop"}
                     />
                   ) : null}
                   <circle r={n.r} fill={meta.color} stroke="var(--card)" strokeWidth="2.5" />

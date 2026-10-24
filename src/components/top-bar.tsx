@@ -60,7 +60,7 @@ export function DetectiveLogo({ className = "h-10 w-10" }: { className?: string 
 export function TopBar({ active }: { active: number }) {
   return (
     <header className="sticky top-0 z-30 border-b border-border/50 bg-card/70 backdrop-blur-md">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-3">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-3 lg:py-2">
         <Link to="/" className="group flex items-center gap-2.5">
           <DetectiveLogo className="h-10 w-10 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-105" />
           <span className="text-2xl font-bold tracking-tight text-ink-deep">
@@ -125,13 +125,13 @@ function Stepper({ active }: { active: number }) {
                 className="group flex w-32 flex-col items-center"
               >
                 <span
-                  className={`relative flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 group-hover:scale-110 ${
+                  className={`relative flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 group-hover:scale-110 ${
                     done || current
                       ? "bg-primary text-primary-foreground shadow-leaf"
                       : "border border-border bg-card text-muted-foreground group-hover:border-primary/50 group-hover:text-primary"
                   } ${current ? "animate-pulse-ring" : ""}`}
                 >
-                  {done ? <Check className="h-5 w-5" strokeWidth={3} /> : i + 1}
+                  {done ? <Check className="h-4 w-4" strokeWidth={3} /> : i + 1}
                   {done ? (
                     <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-leaf-mid ring-2 ring-card">
                       <Check className="h-2.5 w-2.5 text-primary-foreground" strokeWidth={4} />
@@ -139,7 +139,7 @@ function Stepper({ active }: { active: number }) {
                   ) : null}
                 </span>
                 <span
-                  className={`mt-2 text-xs transition-colors ${
+                  className={`mt-1 text-xs transition-colors ${
                     current
                       ? "font-semibold text-primary"
                       : done
@@ -151,7 +151,7 @@ function Stepper({ active }: { active: number }) {
                 </span>
               </Link>
               {i < STEPS.length - 1 ? (
-                <div className="relative mt-[-1.25rem] h-0.5 w-12 overflow-hidden rounded-full bg-border">
+                <div className="relative mt-[-1.1rem] h-0.5 w-12 overflow-hidden rounded-full bg-border">
                   <div
                     className={`absolute inset-y-0 left-0 rounded-full bg-primary transition-all duration-700 ${
                       done ? "w-full" : current ? "w-1/2" : "w-0"
