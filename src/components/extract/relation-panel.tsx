@@ -103,7 +103,7 @@ export function RelationPanel({
           id: "graph",
           label: "Knowledge Graph",
           content: (
-            <Graph
+            <KnowledgeGraph
               data={data}
               selected={selected}
               onSelect={setSelected}
@@ -122,26 +122,38 @@ export function RelationPanel({
   );
 }
 
-function Graph({
+/**
+ * Force-laid-out graph of the most connected entities. `highlight` lights up a set of entities (for example
+ * the ones behind a chat answer) and dims the rest; hovering or selecting a node focuses its neighbours instead.
+ */
+export function KnowledgeGraph({
   data,
   selected,
   onSelect,
   onOpen,
+  highlight,
 }: {
   data: Insights;
   selected: string | null;
   onSelect: (name: string | null) => void;
-  onOpen: () => void;
+  onOpen?: () => void;
+  highlight?: string[];
 }) {
   const [hover, setHover] = useState<string | null>(null);
+  // Highlighted entities outside the top MAX_NODES are added so an answer's evidence is always visible.
+  const extraKey = (highlight ?? []).join("|");
   const nodes = useMemo(() => {
     const top = data.entities.slice(0, MAX_NODES);
-    const keep = new Set(top.map((e) => e.name));
+    const names = new Set(top.map((e) => e.name));
+    const wanted = new Set(extraKey ? extraKey.split("|") : []);
+    const extra = data.entities.filter((e) => wanted.has(e.name) && !names.has(e.name));
+    const shown = [...top, ...extra];
+    const keep = new Set(shown.map((e) => e.name));
     return layout(
-      top,
+      shown,
       data.relationships.filter((r) => keep.has(r.source) && keep.has(r.target)),
     );
-  }, [data]);
+  }, [data, extraKey]);
   const byName = useMemo(() => new Map(nodes.map((n) => [n.name, n])), [nodes]);
   const edges = useMemo(
     () => data.relationships.filter((r) => byName.has(r.source) && byName.has(r.target)),
@@ -157,6 +169,12 @@ function Graph({
     }
     return set;
   }, [focus, edges]);
+  const lit = useMemo(() => {
+    const set = new Set((highlight ?? []).filter((n) => byName.has(n)));
+    return set.size ? set : null;
+  }, [highlight, byName]);
+  // Hover/selection wins; otherwise the highlighted evidence is in focus.
+  const active = neighbours ?? lit;
   const sel = selected ? byName.get(selected) : null;
   const selEdges = sel ? edges.filter((e) => e.source === sel.name || e.target === sel.name) : [];
 
@@ -170,7 +188,9 @@ function Graph({
           </span>
         ))}
         <span className="ml-auto">
-          Top {nodes.length} of {data.stats.entities} entities · hover to focus, click for details
+          {lit && !neighbours
+            ? `${lit.size} entit${lit.size === 1 ? "y" : "ies"} behind this answer`
+            : `Top ${nodes.length} of ${data.stats.entities} entities · hover to focus, click for details`}
         </span>
       </div>
       <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card to-secondary/60">
@@ -184,11 +204,11 @@ function Graph({
           {edges.map((e) => {
             const a = byName.get(e.source)!;
             const b = byName.get(e.target)!;
-            const on =
-              neighbours &&
-              neighbours.has(e.source) &&
-              neighbours.has(e.target) &&
-              (e.source === focus || e.target === focus);
+            const on = neighbours
+              ? neighbours.has(e.source) &&
+                neighbours.has(e.target) &&
+                (e.source === focus || e.target === focus)
+              : Boolean(lit?.has(e.source) && lit.has(e.target));
             return (
               <line
                 key={`${e.source}-${e.target}`}
@@ -197,7 +217,7 @@ function Graph({
                 x2={b.x}
                 y2={b.y}
                 stroke={on ? "var(--primary)" : "var(--leaf-mid)"}
-                strokeOpacity={neighbours ? (on ? 0.9 : 0.08) : 0.3}
+                strokeOpacity={active ? (on ? 0.9 : 0.08) : 0.3}
                 strokeWidth={on ? 2.2 : 1.2}
                 strokeDasharray={on ? "5 4" : undefined}
                 className={on ? "animate-dash" : undefined}
@@ -207,9 +227,10 @@ function Graph({
           })}
           {nodes.map((n, i) => {
             const meta = categoryMeta(n.type);
-            const dim = neighbours && !neighbours.has(n.name);
+            const dim = active && !active.has(n.name);
             const isSel = n.name === selected;
-            const showLabel = i < 14 || (neighbours?.has(n.name) ?? false);
+            const isLit = !neighbours && Boolean(lit?.has(n.name));
+            const showLabel = (!active && i < 14) || (active?.has(n.name) ?? false);
             return (
               <g
                 key={n.name}
@@ -227,8 +248,15 @@ function Graph({
                   className="animate-fade-up"
                   style={{ animationDelay: `${Math.min(i, 40) * 15}ms` }}
                 >
-                  {isSel ? (
-                    <circle r={n.r + 6} fill="none" stroke="var(--primary)" strokeWidth="2" />
+                  {isSel || isLit ? (
+                    <circle
+                      r={n.r + 6}
+                      fill="none"
+                      stroke="var(--primary)"
+                      strokeWidth="2"
+                      strokeDasharray={isLit && !isSel ? "4 3" : undefined}
+                      className={isLit && !isSel ? "animate-dash" : undefined}
+                    />
                   ) : null}
                   <circle r={n.r} fill={meta.color} stroke="var(--card)" strokeWidth="2.5" />
                   {showLabel ? (
@@ -261,13 +289,15 @@ function Graph({
           <p className="mt-3 text-xs font-semibold text-muted-foreground">
             {selEdges.length} connection{selEdges.length === 1 ? "" : "s"} in view
           </p>
-          <button
-            onClick={onOpen}
-            className="group mt-3 flex items-center gap-1.5 text-sm font-semibold text-primary"
-          >
-            See all connections
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-          </button>
+          {onOpen ? (
+            <button
+              onClick={onOpen}
+              className="group mt-3 flex items-center gap-1.5 text-sm font-semibold text-primary"
+            >
+              See all connections
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -50,6 +50,7 @@ export type AskResponse = {
   abstain_reason: string | null;
   claims: Claim[];
   sources: AnswerSource[];
+  highlights: { nodes: string[]; edges: string[]; communities: string[] };
   timings_ms: Record<string, number>;
   router: { route?: string; confidence?: number; reason?: string };
 };

@@ -5,12 +5,15 @@ import {
   ArrowLeft,
   FileText,
   Loader2,
+  Network,
   Quote,
   Send,
   ShieldQuestion,
 } from "lucide-react";
 import { WorkspaceShell } from "@/components/workspace-shell";
-import { api, type AskMode, type AskResponse, type Health } from "@/lib/api";
+import { KnowledgeGraph } from "@/components/extract/relation-panel";
+import { prettyName } from "@/components/extract/entity-types";
+import { api, type AskMode, type AskResponse, type Health, type Insights } from "@/lib/api";
 
 export const Route = createFileRoute("/chat")({
   head: () => ({
@@ -57,14 +60,27 @@ function ChatPage() {
   const [pending, setPending] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const [insights, setInsights] = useState<Insights | null>(null);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.health().then(setHealth, (err: Error) => setHealthError(err.message));
   }, []);
 
+  // The graph on the right comes from the same index the answers use.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (!health || health.reason) return;
+    api.insights().then(
+      (ins) => setInsights(ins.ready ? ins : null),
+      () => setInsights(null),
+    );
+  }, [health]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [turns]);
 
   // Questions are only sent once the index matches the uploaded files.
@@ -80,6 +96,8 @@ function ChatPage() {
     try {
       const response = await api.ask(q, mode);
       setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, response } : t)));
+      setActiveId(id);
+      setSelectedNode(null);
     } catch (err) {
       setTurns((prev) =>
         prev.map((t) => (t.id === id ? { ...t, error: (err as Error).message } : t)),
@@ -89,16 +107,20 @@ function ChatPage() {
     }
   }
 
+  const answered = turns.filter((t) => t.response);
+  const activeTurn =
+    turns.find((t) => t.id === activeId && t.response) ?? answered[answered.length - 1] ?? null;
+
   return (
     <WorkspaceShell active={4}>
-      <main className="mx-auto max-w-4xl px-6 py-8">
-        <section className="glass-card animate-fade-up p-6 sm:p-8">
+      <main className="mx-auto grid max-w-[1500px] grid-cols-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] [&>*]:min-w-0">
+        <section className="glass-card animate-fade-up flex flex-col p-5 sm:p-6 lg:h-[calc(100vh-7.5rem)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-ink-deep sm:text-4xl">
+              <h1 className="text-3xl font-extrabold tracking-tight text-ink-deep">
                 5. Ask <span className="text-gradient-leaf">Your Documents</span>
               </h1>
-              <p className="mt-2 text-muted-foreground">
+              <p className="mt-1.5 text-sm text-muted-foreground">
                 Every answer is split into claims, each backed by a quote checked against your
                 files.
               </p>
@@ -113,12 +135,12 @@ function ChatPage() {
           </div>
 
           {healthError ? (
-            <p className="mt-5 flex items-start gap-2.5 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <p className="mt-4 flex items-start gap-2.5 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               {healthError}
             </p>
           ) : health?.reason ? (
-            <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl bg-secondary px-4 py-3 text-sm">
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl bg-secondary px-4 py-3 text-sm">
               <AlertCircle className="h-4 w-4 shrink-0 text-primary" />
               <span className="flex-1">{health.reason}</span>
               <Link
@@ -129,13 +151,13 @@ function ChatPage() {
               </Link>
             </div>
           ) : health ? (
-            <p className="mt-5 rounded-2xl bg-secondary px-4 py-3 text-sm">
+            <p className="mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm">
               Answering from the {health.documents} document{health.documents === 1 ? "" : "s"} you
               uploaded.
             </p>
           ) : null}
 
-          <div className="mt-6 space-y-6">
+          <div ref={scrollRef} className="mt-5 min-h-[16rem] flex-1 space-y-6 overflow-y-auto pr-1">
             {turns.length === 0 ? (
               <div className="flex flex-wrap gap-2">
                 {SUGGESTIONS.map((s) => (
@@ -150,9 +172,18 @@ function ChatPage() {
                 ))}
               </div>
             ) : (
-              turns.map((t) => <TurnView key={t.id} turn={t} />)
+              turns.map((t) => (
+                <TurnView
+                  key={t.id}
+                  turn={t}
+                  active={t.id === activeTurn?.id}
+                  onSelect={() => {
+                    setActiveId(t.id);
+                    setSelectedNode(null);
+                  }}
+                />
+              ))
             )}
-            <div ref={endRef} />
           </div>
 
           <form
@@ -160,7 +191,7 @@ function ChatPage() {
               e.preventDefault();
               void ask(question);
             }}
-            className="mt-6 border-t border-border pt-5"
+            className="mt-4 border-t border-border pt-4"
           >
             <div
               className="mb-3 flex flex-wrap gap-2"
@@ -208,19 +239,141 @@ function ChatPage() {
             </div>
           </form>
         </section>
+
+        <EvidencePanel
+          insights={insights}
+          turn={activeTurn}
+          pending={pending}
+          blockedReason={health?.reason ?? null}
+          selected={selectedNode}
+          onSelect={setSelectedNode}
+        />
       </main>
     </WorkspaceShell>
   );
 }
 
-function TurnView({ turn }: { turn: Turn }) {
+function EvidencePanel({
+  insights,
+  turn,
+  pending,
+  blockedReason,
+  selected,
+  onSelect,
+}: {
+  insights: Insights | null;
+  turn: Turn | null;
+  pending: boolean;
+  blockedReason: string | null;
+  selected: string | null;
+  onSelect: (name: string | null) => void;
+}) {
+  const nodes = turn?.response?.highlights?.nodes ?? [];
+  const known = new Set(insights?.entities.map((e) => e.name) ?? []);
+  const shown = nodes.filter((n) => known.has(n));
+  return (
+    <aside
+      className="glass-card animate-fade-up flex flex-col p-5 sm:p-6 lg:sticky lg:top-24 lg:h-[calc(100vh-7.5rem)] lg:overflow-y-auto"
+      style={{ animationDelay: "120ms" }}
+    >
+      <div className="flex items-start gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-secondary text-primary">
+          <Network className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xl font-bold text-ink-deep">Evidence Graph</h2>
+          <p className="truncate text-sm text-muted-foreground">
+            {turn?.response
+              ? `Evidence for: “${turn.question}”`
+              : "Ask a question and the entities behind the answer light up here."}
+          </p>
+        </div>
+        {pending ? <Loader2 className="mt-1 h-5 w-5 animate-spin text-primary" /> : null}
+      </div>
+
+      <div className="mt-4 flex-1">
+        {insights ? (
+          <KnowledgeGraph
+            data={insights}
+            selected={selected}
+            onSelect={onSelect}
+            highlight={shown}
+          />
+        ) : (
+          <div className="flex h-full min-h-[18rem] flex-col items-center justify-center rounded-2xl border border-dashed border-border text-center">
+            <Network className="h-10 w-10 text-muted-foreground/60" />
+            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
+              {blockedReason ?? "Loading the knowledge graph…"}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {turn?.response && insights ? (
+        <div className="mt-4">
+          {shown.length ? (
+            <>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Entities used in this answer
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {shown.map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => onSelect(n === selected ? null : n)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all hover:-translate-y-0.5 ${
+                      n === selected
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-secondary text-secondary-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {prettyName(n)}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              This answer didn&apos;t point to specific entities in the graph.
+            </p>
+          )}
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
+function TurnView({
+  turn,
+  active,
+  onSelect,
+}: {
+  turn: Turn;
+  active: boolean;
+  onSelect: () => void;
+}) {
   const r = turn.response;
   return (
-    <article className="space-y-3">
+    <article className="animate-fade-up space-y-3">
       <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm text-primary-foreground">
         {turn.question}
       </p>
-      <div className="max-w-[92%] rounded-2xl rounded-bl-md bg-secondary/60 px-5 py-4">
+      <div
+        role={r ? "button" : undefined}
+        tabIndex={r ? 0 : undefined}
+        aria-pressed={r ? active : undefined}
+        title={r ? "Show this answer's evidence on the graph" : undefined}
+        onClick={r ? onSelect : undefined}
+        onKeyDown={(e) => {
+          if (r && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
+        className={`max-w-[94%] rounded-2xl rounded-bl-md px-5 py-4 transition-all ${
+          r ? "cursor-pointer" : ""
+        } ${active ? "bg-secondary ring-2 ring-primary/40" : "bg-secondary/60 hover:bg-secondary/80"}`}
+      >
         {turn.error ? (
           <p className="flex items-start gap-2 text-sm text-destructive">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
